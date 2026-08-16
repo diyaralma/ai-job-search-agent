@@ -3,9 +3,16 @@
 import { useEffect, useState } from "react";
 import CriteriaForm from "@/components/CriteriaForm";
 import CvUploader from "@/components/CvUploader";
+import JoobleKeyCard from "@/components/JoobleKeyCard";
 import MatchList from "@/components/MatchList";
 import ProfileCard from "@/components/ProfileCard";
-import { getHealth, runSearch, type Health } from "@/lib/api";
+import {
+  getHealth,
+  getJoobleSettings,
+  runSearch,
+  type Health,
+  type JoobleSettings,
+} from "@/lib/api";
 import {
   DEFAULT_CRITERIA,
   type ProfileResponse,
@@ -23,6 +30,7 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [llm, setLlm] = useState<Health["llm"] | null>(null);
+  const [jooble, setJooble] = useState<JoobleSettings | null>(null);
 
   // Keep the profile so a page refresh does not force re-uploading the CV
   useEffect(() => {
@@ -50,6 +58,12 @@ export default function Home() {
       .catch((err: unknown) => {
         setWarning(err instanceof Error ? err.message : "Could not reach the agent service.");
       });
+
+    // Jooble is the only source with Turkish listings and needs a per-user key,
+    // so the UI offers to collect it instead of making people edit agent/.env.
+    getJoobleSettings()
+      .then(setJooble)
+      .catch(() => setJooble(null));
   }, []);
 
   function handleParsed(next: ProfileResponse) {
@@ -112,6 +126,8 @@ export default function Home() {
           {warning}
         </div>
       )}
+
+      {jooble && <JoobleKeyCard settings={jooble} onChange={setJooble} />}
 
       <div className="space-y-6">
         <section>

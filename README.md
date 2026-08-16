@@ -35,6 +35,32 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ~/.local/bin/uv venv .venv && ~/.local/bin/uv pip install --python .venv/bin/python -r requirements.txt
 ```
 
+### Windows
+
+The app itself is cross-platform — only `start.sh` / `stop.sh` are bash (they use
+process groups and PID files under `/tmp`). Two options:
+
+**WSL2 (recommended).** Everything above works unchanged inside the Ubuntu shell.
+
+**Native Windows.** Skip the scripts and run the two services in two terminals:
+
+```powershell
+# terminal 1 — agent
+cd agent
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+copy .env.example .env
+.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# terminal 2 — web
+cd web
+npm install
+npm run dev          # http://localhost:3001
+```
+
+Stop with Ctrl+C in each. PDF export picks up Arial from `C:\Windows\Fonts` when
+DejaVu Sans is not installed, so tailored CVs download normally.
+
 ---
 
 ## Choose your LLM
@@ -149,6 +175,27 @@ programmatically.
 
 When you're done: `./stop.sh`.
 
+### Searching in Turkey
+
+None of the key-free sources carry Turkish job listings. Jooble does, its API is
+free, and **every user needs their own key** — nothing is shipped in this repo.
+
+The app asks for it: a box at the top of the page links to the signup, takes the
+key, and stores it in your local `agent/.env`. Pick the region first — **Jooble
+keys are regional**, and a key issued on `jooble.org` queries the US index (a
+search for "Turkey" returns the town of Turkey, North Carolina) while getting a
+403 on `tr.jooble.org`. For Turkish listings, choose Turkey and get the key from
+[tr.jooble.org/api/about](https://tr.jooble.org/api/about).
+
+The key never leaves your machine: the agent binds to 127.0.0.1, writes the key
+to `agent/.env`, and never sends it back to the browser. You can also set
+`JOOBLE_API_KEY` / `JOOBLE_HOST` in that file by hand — same thing.
+
+Measured difference on a "Turkey + Ankara/Istanbul" search: without a key, 320
+postings fetched and **zero** based in Turkey; with a Turkish Jooble key, 368
+postings and half the results in Istanbul/Ankara. The free quota is 500 requests,
+and one search spends one request per city.
+
 ### What a search costs
 
 Roughly **6 model calls** per search (1 plan + 4 scoring batches + 1 per kit; CV
@@ -165,7 +212,7 @@ postings.
 | `Model output did not match the schema` | The model can't hold the schema — usually a small local one. Try a bigger model, or `LLM_JSON_MODE=object` (some servers need `prompt`). |
 | `The response was cut off at LLM_MAX_TOKENS` | Raise `LLM_MAX_TOKENS`, or lower `SCORE_BATCH_SIZE`. |
 | Rate/quota limit (429) | Lower `MAX_CONCURRENCY`. |
-| No Turkish postings in the results | None of the key-free sources carry Turkish listings. Set `JOOBLE_HOST=https://tr.jooble.org` plus a `JOOBLE_API_KEY` obtained from that region. |
+| No Turkish postings in the results | None of the key-free sources carry Turkish listings — add your own free Jooble key from the box at the top of the page (see [Searching in Turkey](#searching-in-turkey)). |
 | "Could not reach the agent service" | `tail -30 /tmp/jobagent-agent.log` — the service may have crashed. |
 | Port 3001 in use | Run the web app on another port and add that address to `CORS_ORIGINS` in `agent/.env`. |
 

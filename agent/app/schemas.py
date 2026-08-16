@@ -249,6 +249,24 @@ class ApplicationKitRequest(BaseModel):
     job_id: str
 
 
+# --------------------------------------------------------------------------
+# Optional source credentials the UI can set
+# --------------------------------------------------------------------------
+class JoobleSettingsRequest(BaseModel):
+    """The key is write-only: it is stored in agent/.env and never sent back."""
+
+    api_key: str = Field(description="Jooble API key, from <host>/api/about")
+    host: str = Field(
+        default="https://tr.jooble.org",
+        description="The regional host the key was issued for",
+    )
+
+
+class JoobleSettings(BaseModel):
+    configured: bool
+    host: str
+
+
 class ApplicationKitResponse(BaseModel):
     application_id: str
     job: JobPosting

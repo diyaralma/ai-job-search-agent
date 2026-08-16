@@ -10,7 +10,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from . import store
+from . import env_file, store
 from .config import get_settings
 from .cv.extract import UnsupportedCV
 from .cv.parser import parse_cv
@@ -19,6 +19,8 @@ from .pipeline import run_search
 from .schemas import (
     ApplicationKitRequest,
     ApplicationKitResponse,
+    JoobleSettings,
+    JoobleSettingsRequest,
     ProfileResponse,
     SearchRequest,
     SearchResponse,
@@ -75,6 +77,56 @@ async def health() -> dict:
             {"name": s.name, "enabled": s.enabled} for s in ALL_SOURCES
         ],
     }
+
+
+# -- Optional source credentials -------------------------------------------
+# Jooble is the only source that carries Turkish job listings, and its keys are
+# both free and REGIONAL — so every user needs their own, and the key alone is
+# useless without the matching host. Making this settable from the UI saves
+# people from editing agent/.env and restarting.
+#
+# Safe because the service binds to 127.0.0.1 and CORS is restricted to the
+# local web UI. The key is stored in agent/.env and never read back out.
+_ALLOWED_JOOBLE_HOSTS = {"https://jooble.org", "https://tr.jooble.org"}
+
+
+@app.get("/api/settings/jooble", response_model=JoobleSettings)
+async def jooble_settings() -> JoobleSettings:
+    settings = get_settings()
+    return JoobleSettings(configured=settings.jooble_enabled, host=settings.jooble_host)
+
+
+@app.post("/api/settings/jooble", response_model=JoobleSettings)
+async def set_jooble_settings(request: JoobleSettingsRequest) -> JoobleSettings:
+    key = request.api_key.strip()
+    host = request.host.strip().rstrip("/")
+
+    if not key:
+        raise HTTPException(status_code=400, detail="The API key cannot be empty.")
+    # The host is where the key gets sent, so it is not free-form: restricting it
+    # keeps a stray value from shipping the key somewhere else.
+    if host not in _ALLOWED_JOOBLE_HOSTS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Host must be one of: {', '.join(sorted(_ALLOWED_JOOBLE_HOSTS))}",
+        )
+
+    env_file.update({"JOOBLE_API_KEY": key, "JOOBLE_HOST": host})
+    # Sources read the key through get_settings() on every call, so clearing the
+    # cache is enough — no restart, no registry rebuild.
+    get_settings.cache_clear()
+
+    settings = get_settings()
+    logger.info("Jooble source configured (host=%s)", settings.jooble_host)
+    return JoobleSettings(configured=settings.jooble_enabled, host=settings.jooble_host)
+
+
+@app.delete("/api/settings/jooble", response_model=JoobleSettings)
+async def clear_jooble_settings() -> JoobleSettings:
+    env_file.update({"JOOBLE_API_KEY": ""})
+    get_settings.cache_clear()
+    settings = get_settings()
+    return JoobleSettings(configured=settings.jooble_enabled, host=settings.jooble_host)
 
 
 @app.post("/api/cv", response_model=ProfileResponse)

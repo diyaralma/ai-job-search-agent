@@ -18,16 +18,30 @@ from fpdf import FPDF
 
 from ..schemas import TailoredCV
 
-#: Covers Turkish characters and ships with most distributions
+#: Fonts that cover Turkish characters, per platform. The first match wins;
+#: fpdf2's built-in fonts are Latin-1 only, so one of these must be found.
 _FONT_CANDIDATES = (
+    # Linux
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
+    # macOS
     "/Library/Fonts/DejaVuSans.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+    # Windows — DejaVu is not bundled, but Arial covers the same characters
+    "C:/Windows/Fonts/DejaVuSans.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/segoeui.ttf",
 )
 _FONT_BOLD_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
     "/Library/Fonts/DejaVuSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/Library/Fonts/Arial Bold.ttf",
+    "C:/Windows/Fonts/DejaVuSans-Bold.ttf",
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/segoeuib.ttf",
 )
 
 INK = (17, 24, 39)
@@ -79,8 +93,9 @@ def _find_font(candidates: tuple[str, ...]) -> Path:
         if p.exists():
             return p
     raise FontMissing(
-        "DejaVuSans font not found (needed to print non-Latin-1 characters). "
-        "Install it: sudo apt install fonts-dejavu-core"
+        "No usable TTF font found (needed to print non-Latin-1 characters). "
+        "Linux: sudo apt install fonts-dejavu-core · macOS/Windows: Arial is "
+        "normally present, otherwise install DejaVu Sans."
     )
 
 

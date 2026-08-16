@@ -72,6 +72,35 @@ export async function getHealth(): Promise<Health> {
   return request<Health>("/api/health");
 }
 
+/**
+ * Jooble is the only source carrying Turkish job listings, and its keys are free
+ * but REGIONAL — everyone needs their own, paired with the matching host. The
+ * key is write-only: the agent stores it in agent/.env and never sends it back.
+ */
+export type JoobleSettings = {
+  configured: boolean;
+  host: string;
+};
+
+export async function getJoobleSettings(): Promise<JoobleSettings> {
+  return request<JoobleSettings>("/api/settings/jooble");
+}
+
+export async function saveJoobleSettings(
+  apiKey: string,
+  host: string,
+): Promise<JoobleSettings> {
+  return request<JoobleSettings>("/api/settings/jooble", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ api_key: apiKey, host }),
+  });
+}
+
+export async function clearJoobleSettings(): Promise<JoobleSettings> {
+  return request<JoobleSettings>("/api/settings/jooble", { method: "DELETE" });
+}
+
 export async function createApplicationKit(
   profileId: string,
   jobId: string,

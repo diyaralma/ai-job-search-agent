@@ -67,7 +67,7 @@ export default function MatchList({
             >
               free Jooble key
             </a>{" "}
-            and add it to <code className="rounded bg-blue-100 px-1">agent/.env</code>.
+            and paste it into the Jooble box at the top of this page.
           </div>
         )}
 
@@ -76,9 +76,8 @@ export default function MatchList({
             <span className="font-medium">Nothing matched your criteria.</span>{" "}
             The location filter was relaxed so the screen would not be empty — the
             postings below may be outside the country/city you picked. To widen
-            coverage, set{" "}
-            <code className="rounded bg-amber-100 px-1">JOOBLE_API_KEY</code> (for
-            Turkish postings) or keep remote work selected.
+            coverage, add a Jooble key at the top of this page (for Turkish
+            postings) or keep remote work selected.
           </div>
         )}
 
