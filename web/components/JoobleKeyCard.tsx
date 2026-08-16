@@ -27,7 +27,11 @@ export default function JoobleKeyCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [apiKey, setApiKey] = useState("");
-  const [host, setHost] = useState(settings.host || HOSTS[0].value);
+  // Not configured yet: default to Turkey. That is what this card is for, and
+  // .env.example ships the global host, which would otherwise preselect Global.
+  const [host, setHost] = useState(
+    settings.configured ? settings.host : HOSTS[0].value,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
