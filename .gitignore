@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Ortam / sırlar
+.env
+.env.local
+.env.*.local
+
+# Veri
+agent/data/
+*.db
+*.db-wal
+*.db-shm
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Editör / OS
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0f1115;
+  --color-surface: #ffffff;
+  --color-muted: #6b7280;
+  --color-line: #e5e7eb;
+  --color-accent: #2563eb;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: #f6f7f9;
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Skor rozetleri — verdict değerleriyle birebir eşleşir */
+.verdict-strong {
+  background: #dcfce7;
+  color: #14532d;
+}
+.verdict-good {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+.verdict-stretch {
+  background: #fef3c7;
+  color: #78350f;
+}
+.verdict-poor {
+  background: #f3f4f6;
+  color: #4b5563;
+}

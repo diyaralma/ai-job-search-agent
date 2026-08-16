@@ -1,0 +1,17 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+httpx>=0.27.0
+pydantic>=2.9.0
+pydantic-settings>=2.6.0
+python-multipart>=0.0.12
+python-docx>=1.1.2
+pypdf>=5.1.0
+# İlana özel CV'yi PDF'e basmak için (saf Python, sistem bağımlılığı yok)
+fpdf2>=2.8.0
+
+# Model sağlayıcıları (bkz. agent/app/llm.py, LLM_PROVIDER):
+#   claude_cli → ek paket gerekmez, Claude Code CLI kullanılır
+#   anthropic  → aşağıdaki anthropic paketi
+#   openai     → ek paket gerekmez, httpx ile OpenAI-uyumlu uca istek atılır
+# İçe aktarım tembel: anthropic yalnızca o sağlayıcı seçilirse yüklenir.
+anthropic>=0.40.0
