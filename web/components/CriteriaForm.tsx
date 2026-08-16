@@ -4,22 +4,22 @@ import { useState } from "react";
 import type { SearchCriteria, Seniority, WorkMode } from "@/lib/types";
 
 const WORK_MODES: { value: WorkMode; label: string }[] = [
-  { value: "remote", label: "Uzaktan" },
-  { value: "hybrid", label: "Hibrit" },
-  { value: "onsite", label: "Ofisten" },
+  { value: "remote", label: "Remote" },
+  { value: "hybrid", label: "Hybrid" },
+  { value: "onsite", label: "Onsite" },
 ];
 
 const SENIORITIES: { value: Seniority; label: string }[] = [
-  { value: "intern", label: "Stajyer" },
+  { value: "intern", label: "Intern" },
   { value: "junior", label: "Junior" },
-  { value: "mid", label: "Orta" },
+  { value: "mid", label: "Mid" },
   { value: "senior", label: "Senior" },
   { value: "lead", label: "Lead" },
   { value: "principal", label: "Principal" },
-  { value: "executive", label: "Yönetici" },
+  { value: "executive", label: "Executive" },
 ];
 
-/** "İstanbul, Berlin" -> ["İstanbul", "Berlin"] */
+/** "Istanbul, Berlin" -> ["Istanbul", "Berlin"] */
 function splitList(value: string): string[] {
   return value
     .split(",")
@@ -38,8 +38,8 @@ export default function CriteriaForm({
   onSubmit: () => void;
   busy: boolean;
 }) {
-  // Metin alanlarını ayrı tutuyoruz: kullanıcı "Berlin," yazarken her tuşta
-  // diziye çevirmek imleci ve virgülü bozuyor.
+  // Text fields are kept in separate state: converting to an array on every
+  // keystroke while the user types "Berlin," breaks the caret and the comma.
   const [countries, setCountries] = useState(criteria.countries.join(", "));
   const [cities, setCities] = useState(criteria.cities.join(", "));
   const [excludeKeywords, setExcludeKeywords] = useState(criteria.exclude_keywords.join(", "));
@@ -55,16 +55,16 @@ export default function CriteriaForm({
 
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-5">
-      <h2 className="text-lg font-semibold text-gray-900">Arama kriterleri</h2>
+      <h2 className="text-lg font-semibold text-gray-900">Search criteria</h2>
       <p className="mt-1 text-sm text-gray-600">
-        Boş bıraktığınız alanlar filtre uygulanmadığı anlamına gelir.
+        Fields you leave empty mean no filter is applied.
       </p>
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
-        <Field label="Ülkeler" hint="Virgülle ayırın">
+        <Field label="Countries" hint="Comma separated">
           <input
             className={inputClass}
-            placeholder="Türkiye, Germany, Netherlands"
+            placeholder="Turkey, Germany, Netherlands"
             value={countries}
             onChange={(e) => {
               setCountries(e.target.value);
@@ -73,10 +73,10 @@ export default function CriteriaForm({
           />
         </Field>
 
-        <Field label="Şehirler" hint="Virgülle ayırın">
+        <Field label="Cities" hint="Comma separated">
           <input
             className={inputClass}
-            placeholder="İstanbul, Berlin"
+            placeholder="Istanbul, Berlin"
             value={cities}
             onChange={(e) => {
               setCities(e.target.value);
@@ -85,7 +85,7 @@ export default function CriteriaForm({
           />
         </Field>
 
-        <Field label="Çalışma şekli">
+        <Field label="Work mode">
           <div className="flex flex-wrap gap-2">
             {WORK_MODES.map((mode) => (
               <Toggle
@@ -99,7 +99,7 @@ export default function CriteriaForm({
           </div>
         </Field>
 
-        <Field label="Seviye" hint="Seçilmezse tüm seviyeler">
+        <Field label="Seniority" hint="All levels if none selected">
           <div className="flex flex-wrap gap-2">
             {SENIORITIES.map((s) => (
               <Toggle
@@ -113,7 +113,7 @@ export default function CriteriaForm({
           </div>
         </Field>
 
-        <Field label="Hariç tutulacak kelimeler" hint="İlan başlığında geçerse elenir">
+        <Field label="Exclude keywords" hint="Dropped if they appear in the job title">
           <input
             className={inputClass}
             placeholder="sales, unpaid, commission"
@@ -125,10 +125,10 @@ export default function CriteriaForm({
           />
         </Field>
 
-        <Field label="Hariç tutulacak şirketler">
+        <Field label="Exclude companies">
           <input
             className={inputClass}
-            placeholder="Eski İşverenim A.Ş."
+            placeholder="My Former Employer Inc."
             value={excludeCompanies}
             onChange={(e) => {
               setExcludeCompanies(e.target.value);
@@ -137,7 +137,7 @@ export default function CriteriaForm({
           />
         </Field>
 
-        <Field label="İlan yaşı (gün)">
+        <Field label="Max posting age (days)">
           <input
             type="number"
             min={1}
@@ -148,7 +148,7 @@ export default function CriteriaForm({
           />
         </Field>
 
-        <Field label="Sonuç sayısı">
+        <Field label="Number of results">
           <input
             type="number"
             min={5}
@@ -165,7 +165,7 @@ export default function CriteriaForm({
         disabled={busy}
         className="mt-6 w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-400 sm:w-auto sm:px-8"
       >
-        {busy ? "İlanlar taranıyor…" : "İlanları tara ve eşleştir"}
+        {busy ? "Scanning postings…" : "Scan postings and match"}
       </button>
     </section>
   );

@@ -1,4 +1,4 @@
-"""Etkin kaynakların listesi."""
+"""List of enabled sources."""
 
 from __future__ import annotations
 

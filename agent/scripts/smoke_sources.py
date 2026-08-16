@@ -1,8 +1,8 @@
-"""Kaynak katmanını LLM olmadan test eder.
+"""Tests the source layer without any LLM.
 
-Anthropic anahtarı olmadan çalışır: sabit bir arama planı kullanır, tüm
-kaynaklardan ilan çeker, tekilleştirme ve ön elemenin sonucunu yazar.
-Yeni bir kaynak eklerken ya da bir kaynağın API'si değiştiğinde ilk bakılacak yer.
+Needs no API key: uses a fixed search plan, fetches postings from every source
+and prints what dedupe and pre-filtering produced. The first place to look when
+adding a source or when a source's API changes.
 
     ./.venv/bin/python scripts/smoke_sources.py
 """
@@ -26,7 +26,7 @@ PLAN = SearchPlan(
     nice_to_have_skills=["Django", "PostgreSQL", "Docker", "AWS"],
     exclude_terms=["principal", "director", "sales"],
     locations=["remote"],
-    rationale="Smoke testi için sabit plan.",
+    rationale="Fixed plan for the smoke test.",
 )
 
 CRITERIA = SearchCriteria(
@@ -39,8 +39,8 @@ CRITERIA = SearchCriteria(
 
 async def main() -> int:
     jobs, used, errors = await collect_jobs(PLAN, CRITERIA)
-    print(f"çekilen ilan       : {len(jobs)}")
-    print(f"çalışan kaynaklar  : {', '.join(used) or '-'}")
+    print(f"fetched postings   : {len(jobs)}")
+    print(f"working sources    : {', '.join(used) or '-'}")
     if errors:
         for name, err in errors.items():
             print(f"  ! {name}: {err}")
@@ -49,15 +49,15 @@ async def main() -> int:
     filtered = hard_filter(unique, CRITERIA, PLAN)
     ranked = rank(filtered, PLAN, CRITERIA, 10)
 
-    print(f"tekilleştirme sonrası: {len(unique)}")
-    print(f"sert filtre sonrası  : {len(filtered)}")
-    print("\nkural skoruna göre ilk 10:")
+    print(f"after dedupe       : {len(unique)}")
+    print(f"after hard filter  : {len(filtered)}")
+    print("\ntop 10 by rule score:")
     for job, score in ranked:
         flag = f"[{job.ats}]" if job.ats else f"[{job.source}]"
         print(f"  {score:5.1f} {flag:<12} {job.title[:52]:<52} @ {job.company[:24]}")
 
     if not jobs:
-        print("\nHİÇ İLAN ÇEKİLEMEDİ — kaynak katmanında sorun var.")
+        print("\nNO POSTINGS FETCHED — something is wrong in the source layer.")
         return 1
     return 0
 

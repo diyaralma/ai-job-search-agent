@@ -7,7 +7,7 @@ import type {
 
 const BASE = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:8000";
 
-/** FastAPI hata gövdesinden okunabilir mesaj çıkarır. */
+/** Extracts a readable message from a FastAPI error body. */
 async function errorMessage(response: Response): Promise<string> {
   try {
     const body = await response.json();
@@ -17,9 +17,9 @@ async function errorMessage(response: Response): Promise<string> {
       return detail.map((d: { msg?: string }) => d.msg ?? JSON.stringify(d)).join("; ");
     }
   } catch {
-    // JSON değilse aşağıdaki genel mesaja düş
+    // Not JSON — fall through to the generic message below
   }
-  return `Sunucu hatası (${response.status})`;
+  return `Server error (${response.status})`;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -28,7 +28,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     response = await fetch(`${BASE}${path}`, init);
   } catch {
     throw new Error(
-      `Agent servisine ulaşılamadı (${BASE}). Servisin çalıştığından emin olun.`,
+      `Could not reach the agent service (${BASE}). Make sure it is running.`,
     );
   }
   if (!response.ok) {
@@ -56,13 +56,13 @@ export async function runSearch(
 
 export type Health = {
   status: string;
-  /** Seçili model sağlayıcısı — agent/.env içindeki LLM_PROVIDER ile belirlenir. */
+  /** The selected model provider — set with LLM_PROVIDER in agent/.env. */
   llm: {
     provider: string;
     model: string;
-    /** Çağrı yapmadan anlaşılan hazırlık durumu (CLI var mı, anahtar tanımlı mı…). */
+    /** Readiness determined without making a call (is the CLI there, is a key set…). */
     ready: boolean;
-    /** Hazır değilse ne yapılacağını anlatan mesaj; doğrudan kullanıcıya gösterilir. */
+    /** If not ready, what to do about it; shown to the user verbatim. */
     detail: string;
   };
   sources: { name: string; enabled: boolean }[];
@@ -83,7 +83,7 @@ export async function createApplicationKit(
   });
 }
 
-/** CV indirme bağlantısı — tarayıcı doğrudan agent servisinden indirir. */
+/** CV download link — the browser downloads straight from the agent service. */
 export function cvDownloadUrl(applicationId: string, format: "pdf" | "docx"): string {
   return `${BASE}/api/applications/${applicationId}/cv.${format}`;
 }

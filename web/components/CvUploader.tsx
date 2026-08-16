@@ -26,7 +26,7 @@ export default function CvUploader({
     try {
       onParsed(await uploadCv(file));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "CV yüklenemedi.");
+      setError(err instanceof Error ? err.message : "Could not upload the CV.");
       setFilename(null);
     } finally {
       setBusy(false);
@@ -70,10 +70,10 @@ export default function CvUploader({
           <>
             <Spinner />
             <p className="mt-3 text-sm font-medium text-gray-700">
-              CV analiz ediliyor…
+              Analyzing the CV…
             </p>
             <p className="mt-1 text-xs text-gray-500">
-              {filename} — bu işlem 15-30 saniye sürebilir
+              {filename} — this can take 15-30 seconds
             </p>
           </>
         ) : (
@@ -93,9 +93,9 @@ export default function CvUploader({
               />
             </svg>
             <p className="mt-3 text-sm font-medium text-gray-800">
-              CV'nizi buraya sürükleyin veya tıklayıp seçin
+              Drag your CV here, or click to choose a file
             </p>
-            <p className="mt-1 text-xs text-gray-500">PDF, DOCX veya TXT — en fazla 25 MB</p>
+            <p className="mt-1 text-xs text-gray-500">PDF, DOCX or TXT — 25 MB max</p>
           </>
         )}
       </div>

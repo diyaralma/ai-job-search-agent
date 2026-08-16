@@ -1,15 +1,15 @@
-"""Uçtan uca arama akışı.
+"""End-to-end search flow.
 
-    profil + kriterler
-        -> arama planı (LLM)
-        -> kaynaklardan toplama (paralel)
-        -> tekilleştirme + sert filtreler (kural)
-        -> ön sıralama (kural)
-        -> uygunluk skorlaması (LLM, partili + cache'li)
-        -> sıralı sonuç
+    profile + criteria
+        -> search plan (LLM)
+        -> collect from sources (parallel)
+        -> dedupe + hard filters (rules)
+        -> pre-ranking (rules)
+        -> fit scoring (LLM, batched)
+        -> ranked results
 
-Bir kaynak hata verirse arama durmuyor; hata `stats.source_errors` içinde
-kullanıcıya raporlanıyor.
+A failing source does not stop the search; the error is reported to the user in
+`stats.source_errors`.
 """
 
 from __future__ import annotations
@@ -51,9 +51,9 @@ async def _fetch_one(
     except httpx.HTTPStatusError as exc:
         return source.name, [], f"HTTP {exc.response.status_code}"
     except httpx.TimeoutException:
-        return source.name, [], "zaman aşımı"
-    except Exception as exc:  # noqa: BLE001 - kaynak hatası aramayı durdurmasın
-        logger.warning("Kaynak hatası %s: %s", source.name, exc)
+        return source.name, [], "timeout"
+    except Exception as exc:  # noqa: BLE001 - a source error must not stop the search
+        logger.warning("Source error %s: %s", source.name, exc)
         return source.name, [], str(exc)[:200]
 
 
@@ -89,14 +89,14 @@ async def collect_jobs(
 
 
 def candidate_places(profile: CandidateProfile, criteria: SearchCriteria) -> list[str]:
-    """Adayın başvurabileceği coğrafyalar.
+    """Geographies the candidate can apply to.
 
-    Kriterlerde açıkça belirtilenler + CV'den çıkan konum. Coğrafi kısıtlı
-    uzaktan ilanları ("Remote — United States") sıralarken kullanılıyor.
+    Whatever the criteria state explicitly, plus the location parsed from the CV.
+    Used when ranking geo-restricted remote postings ("Remote — United States").
     """
     places = [*criteria.countries, *criteria.cities]
     if profile.location:
-        # "İstanbul, Türkiye" -> ["İstanbul", "Türkiye"]
+        # "Istanbul, Turkey" -> ["Istanbul", "Turkey"]
         places.extend(part.strip() for part in profile.location.split(",") if part.strip())
     return [p for p in places if p]
 
@@ -116,12 +116,12 @@ async def run_search(
     stats.after_dedupe = len(unique)
 
     filtered = hard_filter(unique, criteria, plan)
-    # Sert filtreler her şeyi elediyse (ör. hiçbir kaynağın kapsamadığı bir
-    # ülke seçilmiş) tekilleştirilmiş havuza geri dön: boş ekran yerine zayıf
-    # sonuç göstermek daha yararlı. Ama bunu STATS'A YAZ — kullanıcı kriterine
-    # uymayan sonuç görüyorsa nedenini bilmeli.
+    # If the hard filters removed everything (e.g. a country no source covers),
+    # fall back to the deduped pool: a weak result beats an empty screen. But
+    # RECORD IT IN STATS — if the user sees results outside their criteria, they
+    # need to know why.
     if not filtered and unique:
-        logger.info("Sert filtreler tüm ilanları eledi, kısıtlar gevşetiliyor")
+        logger.info("Hard filters removed every posting, relaxing constraints")
         filtered = unique
         stats.relaxed = True
     stats.after_prefilter = len(filtered)

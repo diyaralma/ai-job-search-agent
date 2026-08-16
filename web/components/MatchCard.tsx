@@ -6,17 +6,17 @@ import { createApplicationKit } from "@/lib/api";
 import type { ApplicationKitResponse, JobMatch, Verdict, WorkMode } from "@/lib/types";
 
 const VERDICT_LABEL: Record<Verdict, string> = {
-  strong: "Güçlü eşleşme",
-  good: "İyi aday",
-  stretch: "Zorlayıcı",
-  poor: "Uyumsuz",
+  strong: "Strong match",
+  good: "Good candidate",
+  stretch: "A stretch",
+  poor: "Mismatch",
 };
 
 const WORK_MODE_LABEL: Record<WorkMode, string> = {
-  remote: "Uzaktan",
-  hybrid: "Hibrit",
-  onsite: "Ofisten",
-  unknown: "Belirtilmemiş",
+  remote: "Remote",
+  hybrid: "Hybrid",
+  onsite: "Onsite",
+  unknown: "Not specified",
 };
 
 function formatDate(iso: string | null): string | null {
@@ -24,10 +24,10 @@ function formatDate(iso: string | null): string | null {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
   const days = Math.floor((Date.now() - date.getTime()) / 86_400_000);
-  if (days <= 0) return "bugün";
-  if (days === 1) return "dün";
-  if (days < 30) return `${days} gün önce`;
-  return date.toLocaleDateString("tr-TR");
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} days ago`;
+  return date.toLocaleDateString("en-GB");
 }
 
 export default function MatchCard({
@@ -48,7 +48,7 @@ export default function MatchCard({
     try {
       setKit(await createApplicationKit(profileId, match.job.id));
     } catch (err) {
-      setKitError(err instanceof Error ? err.message : "Başvuru kiti üretilemedi.");
+      setKitError(err instanceof Error ? err.message : "Could not generate the application kit.");
     } finally {
       setBuilding(false);
     }
@@ -69,7 +69,7 @@ export default function MatchCard({
             {job.ats && (
               <span
                 className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700"
-                title="İşverenin kendi başvuru sistemi — otomatik başvuruya uygun"
+                title="The employer's own application system — suitable for auto-apply"
               >
                 {job.ats}
               </span>
@@ -77,9 +77,9 @@ export default function MatchCard({
             {match.scored_by === "rules" && (
               <span
                 className="rounded-full bg-amber-50 px-2.5 py-1 text-xs text-amber-800"
-                title="Bu ilan yalnızca kural bazlı skorlandı"
+                title="This posting was scored by rules only"
               >
-                kural skoru
+                rule score
               </span>
             )}
           </div>
@@ -139,7 +139,7 @@ export default function MatchCard({
           {match.missing_skills.length > 0 && (
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Eksik görünenler
+                Appears to be missing
               </p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 {match.missing_skills.map((skill) => (
@@ -157,7 +157,7 @@ export default function MatchCard({
           {match.risks.length > 0 && (
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Dikkat edilmesi gerekenler
+Things to watch out for
               </p>
               <ul className="mt-1.5 list-disc pl-5 text-gray-700">
                 {match.risks.map((risk, i) => (
@@ -170,7 +170,7 @@ export default function MatchCard({
           {job.description && (
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                İlan metni (kısaltılmış)
+                Posting text (truncated)
               </p>
               <p className="mt-1.5 whitespace-pre-line text-gray-700">
                 {job.description.slice(0, 1200)}
@@ -188,7 +188,7 @@ export default function MatchCard({
           rel="noopener noreferrer"
           className="rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800"
         >
-          İlana git
+          Open posting
         </a>
         {!kit && (
           <button
@@ -196,20 +196,20 @@ export default function MatchCard({
             disabled={building}
             className="rounded-lg bg-violet-600 px-3.5 py-2 text-sm font-medium text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-gray-400"
           >
-            {building ? "CV hazırlanıyor…" : "İlana özel CV hazırla"}
+            {building ? "Preparing CV…" : "Tailor a CV for this job"}
           </button>
         )}
         <button
           onClick={() => setOpen((v) => !v)}
           className="text-sm font-medium text-blue-600 hover:text-blue-700"
         >
-          {open ? "Daralt" : "Detay"}
+          {open ? "Collapse" : "Details"}
         </button>
       </div>
 
       {building && (
         <p className="mt-3 rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-900">
-          Bu ilana özel CV, ön yazı ve vurgulanacak maddeler üretiliyor — 40-90 saniye sürebilir.
+          Generating a tailored CV, cover letter and talking points for this posting — this can take 40-90 seconds.
         </p>
       )}
       {kitError && (
@@ -226,7 +226,7 @@ function ScoreDial({ score }: { score: number }) {
   return (
     <div className="shrink-0 text-right">
       <div className={`text-2xl font-bold tabular-nums ${color}`}>{score}</div>
-      <div className="text-[10px] uppercase tracking-wide text-gray-400">uygunluk</div>
+      <div className="text-[10px] uppercase tracking-wide text-gray-400">fit</div>
     </div>
   );
 }

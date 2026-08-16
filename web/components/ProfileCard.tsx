@@ -4,13 +4,13 @@ import { useState } from "react";
 import type { ProfileResponse } from "@/lib/types";
 
 const SENIORITY_LABEL: Record<string, string> = {
-  intern: "Stajyer",
+  intern: "Intern",
   junior: "Junior",
-  mid: "Orta seviye",
+  mid: "Mid-level",
   senior: "Senior",
   lead: "Lead",
   principal: "Principal",
-  executive: "Yönetici",
+  executive: "Executive",
 };
 
 export default function ProfileCard({
@@ -28,12 +28,12 @@ export default function ProfileCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-gray-900">
-            {p.full_name || "İsimsiz aday"}
+            {p.full_name || "Unnamed candidate"}
           </h2>
           <p className="mt-0.5 text-sm text-gray-600">{p.headline}</p>
           <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-600">
             <Chip>{SENIORITY_LABEL[p.seniority] ?? p.seniority}</Chip>
-            <Chip>{p.years_experience} yıl deneyim</Chip>
+            <Chip>{p.years_experience} yrs experience</Chip>
             {p.location && <Chip>{p.location}</Chip>}
             <Chip>{data.source_filename}</Chip>
           </div>
@@ -42,29 +42,29 @@ export default function ProfileCard({
           onClick={onReset}
           className="shrink-0 rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
         >
-          Farklı CV yükle
+          Upload a different CV
         </button>
       </div>
 
       <p className="mt-4 text-sm leading-relaxed text-gray-700">{p.summary}</p>
 
       <div className="mt-4">
-        <SkillRow label="Yetkinlikler" items={p.skills} limit={14} />
-        <SkillRow label="Hedef pozisyonlar" items={p.target_titles} limit={8} />
+        <SkillRow label="Skills" items={p.skills} limit={14} />
+        <SkillRow label="Target roles" items={p.target_titles} limit={8} />
       </div>
 
       <button
         onClick={() => setOpen((v) => !v)}
         className="mt-4 text-sm font-medium text-blue-600 hover:text-blue-700"
       >
-        {open ? "Detayları gizle" : "Tüm profil detayını göster"}
+        {open ? "Hide details" : "Show full profile details"}
       </button>
 
       {open && (
         <div className="mt-4 space-y-4 border-t border-gray-200 pt-4 text-sm">
           {p.experience.length > 0 && (
             <div>
-              <h3 className="font-medium text-gray-900">Deneyim</h3>
+              <h3 className="font-medium text-gray-900">Experience</h3>
               <ul className="mt-2 space-y-3">
                 {p.experience.map((exp, i) => (
                   <li key={i}>
@@ -72,7 +72,7 @@ export default function ProfileCard({
                       {exp.title} — {exp.company}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {[exp.start, exp.end].filter(Boolean).join(" → ") || "Tarih belirtilmemiş"}
+                      {[exp.start, exp.end].filter(Boolean).join(" → ") || "No dates given"}
                     </p>
                     {exp.highlights.length > 0 && (
                       <ul className="mt-1 list-disc pl-5 text-gray-700">
@@ -86,10 +86,10 @@ export default function ProfileCard({
               </ul>
             </div>
           )}
-          <SkillRow label="Diller" items={p.languages} limit={10} />
-          <SkillRow label="Sektörler" items={p.industries} limit={10} />
-          <SkillRow label="Eğitim" items={p.education} limit={10} />
-          <SkillRow label="Sertifikalar" items={p.certifications} limit={10} />
+          <SkillRow label="Languages" items={p.languages} limit={10} />
+          <SkillRow label="Industries" items={p.industries} limit={10} />
+          <SkillRow label="Education" items={p.education} limit={10} />
+          <SkillRow label="Certifications" items={p.certifications} limit={10} />
         </div>
       )}
     </section>

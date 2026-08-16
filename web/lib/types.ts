@@ -1,5 +1,5 @@
-// Agent servisindeki Pydantic şemalarının TypeScript karşılığı.
-// agent/app/schemas.py değiştiğinde burası da güncellenmeli.
+// TypeScript counterpart of the agent service's Pydantic schemas.
+// Keep this in sync whenever agent/app/schemas.py changes.
 
 export type Seniority =
   | "intern"
@@ -109,7 +109,7 @@ export interface SearchStats {
   sources_used: string[];
   source_errors: Record<string, string>;
   duration_ms: number;
-  /** Kriterlere uyan ilan kalmadığı için filtreler gevşetildi. */
+  /** Filters were relaxed because nothing matched the criteria. */
   relaxed: boolean;
 }
 
@@ -135,7 +135,7 @@ export const DEFAULT_CRITERIA: SearchCriteria = {
   max_results: 30,
 };
 
-// --- Başvuru kiti ---------------------------------------------------------
+// --- Application kit ------------------------------------------------------
 
 export interface TailoredExperience {
   title: string;
@@ -161,11 +161,11 @@ export interface ApplicationKit {
   cover_letter: string;
   talking_points: string[];
   why_me: string;
-  /** Bu ilan için öne çıkarılanlar — şeffaflık */
+  /** Foregrounded for this posting — transparency */
   emphasized: string[];
-  /** Geri plana atılanlar — şeffaflık */
+  /** Pushed to the background — transparency */
   downplayed: string[];
-  /** Kapatılamayan eksikler; mülakatta sorulabilir */
+  /** Gaps that could not be closed; may come up in the interview */
   gaps_to_expect: string[];
 }
 

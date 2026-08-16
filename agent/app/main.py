@@ -1,4 +1,4 @@
-"""FastAPI uygulaması — web arayüzünün konuştuğu agent servisi."""
+"""FastAPI application — the agent service the web UI talks to."""
 
 from __future__ import annotations
 
@@ -38,20 +38,20 @@ async def lifespan(app: FastAPI):
     await store.init_db()
     llm = describe_provider()
     logger.info(
-        "Agent servisi hazır (sağlayıcı=%s, model=%s, hazır=%s)",
+        "Agent service ready (provider=%s, model=%s, ready=%s)",
         llm["provider"],
         llm["model"],
         llm["ready"],
     )
     if not llm["ready"]:
-        logger.warning("LLM adımları çalışmayacak: %s", llm["detail"])
+        logger.warning("LLM steps will not work: %s", llm["detail"])
     yield
 
 
 app = FastAPI(
     title="AI Job Search Agent",
     version="0.1.0",
-    description="CV'den profil çıkarır, iş ilanlarını tarar ve adaya göre skorlar.",
+    description="Extracts a profile from a CV, scans job postings and scores them for the candidate.",
     lifespan=lifespan,
 )
 
@@ -66,8 +66,8 @@ app.add_middleware(
 
 @app.get("/api/health")
 async def health() -> dict:
-    # llm.ready: seçili sağlayıcı çağrı yapmadan hazır mı (CLI var mı, anahtar
-    # tanımlı mı…). Arayüz bunu görüp kullanıcıyı en baştan uyarıyor.
+    # llm.ready: is the selected provider usable without making a call (is the
+    # CLI present, is a key set…). The UI reads this and warns the user upfront.
     return {
         "status": "ok",
         "llm": describe_provider(),
@@ -81,15 +81,15 @@ async def health() -> dict:
 async def upload_cv(file: UploadFile = File(...)) -> ProfileResponse:
     data = await file.read()
     if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="Dosya 25 MB sınırını aşıyor.")
+        raise HTTPException(status_code=413, detail="File exceeds the 25 MB limit.")
 
     try:
         profile = await parse_cv(file.filename or "cv.pdf", data)
     except UnsupportedCV as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("CV ayrıştırma başarısız")
-        raise HTTPException(status_code=502, detail=f"CV analiz edilemedi: {exc}") from exc
+        logger.exception("CV parsing failed")
+        raise HTTPException(status_code=502, detail=f"Could not analyze the CV: {exc}") from exc
 
     profile_id = f"prof_{uuid.uuid4().hex[:12]}"
     return await store.save_profile(profile_id, file.filename or "cv.pdf", profile)
@@ -99,7 +99,7 @@ async def upload_cv(file: UploadFile = File(...)) -> ProfileResponse:
 async def get_profile(profile_id: str) -> ProfileResponse:
     profile = await store.get_profile(profile_id)
     if profile is None:
-        raise HTTPException(status_code=404, detail="Profil bulunamadı.")
+        raise HTTPException(status_code=404, detail="Profile not found.")
     return profile
 
 
@@ -112,13 +112,13 @@ async def profile_searches(profile_id: str) -> list[dict]:
 async def search(request: SearchRequest) -> SearchResponse:
     stored = await store.get_profile(request.profile_id)
     if stored is None:
-        raise HTTPException(status_code=404, detail="Profil bulunamadı. Önce CV yükleyin.")
+        raise HTTPException(status_code=404, detail="Profile not found. Upload a CV first.")
 
     try:
         plan, stats, matches = await run_search(stored.profile, request.criteria)
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Arama başarısız")
-        raise HTTPException(status_code=502, detail=f"Arama tamamlanamadı: {exc}") from exc
+        logger.exception("Search failed")
+        raise HTTPException(status_code=502, detail=f"Search could not be completed: {exc}") from exc
 
     search_id = f"srch_{uuid.uuid4().hex[:12]}"
     await store.save_search(
@@ -131,30 +131,30 @@ async def search(request: SearchRequest) -> SearchResponse:
 async def get_search(search_id: str) -> SearchResponse:
     result = await store.get_search(search_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Arama bulunamadı.")
+        raise HTTPException(status_code=404, detail="Search not found.")
     return result
 
 
-# -- Başvuru kiti ----------------------------------------------------------
+# -- Application kit -------------------------------------------------------
 @app.post("/api/applications", response_model=ApplicationKitResponse)
 async def create_application(request: ApplicationKitRequest) -> ApplicationKitResponse:
-    """İlana özel CV + ön yazı üretir ve saklar."""
+    """Generates and stores a posting-specific CV + cover letter."""
     stored = await store.get_profile(request.profile_id)
     if stored is None:
-        raise HTTPException(status_code=404, detail="Profil bulunamadı.")
+        raise HTTPException(status_code=404, detail="Profile not found.")
 
     job = await store.find_job(request.job_id)
     if job is None:
         raise HTTPException(
             status_code=404,
-            detail="İlan bulunamadı. Aramayı yeniden çalıştırıp tekrar deneyin.",
+            detail="Posting not found. Re-run the search and try again.",
         )
 
     try:
         kit = await build_kit(stored.profile, job)
     except Exception as exc:  # noqa: BLE001
-        logger.exception("Başvuru kiti üretilemedi")
-        raise HTTPException(status_code=502, detail=f"Başvuru kiti üretilemedi: {exc}") from exc
+        logger.exception("Could not generate the application kit")
+        raise HTTPException(status_code=502, detail=f"Could not generate the application kit: {exc}") from exc
 
     application_id = f"app_{uuid.uuid4().hex[:12]}"
     return await store.save_application(application_id, request.profile_id, job, kit)
@@ -164,19 +164,19 @@ async def create_application(request: ApplicationKitRequest) -> ApplicationKitRe
 async def get_application(application_id: str) -> ApplicationKitResponse:
     result = await store.get_application(application_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Başvuru kiti bulunamadı.")
+        raise HTTPException(status_code=404, detail="Application kit not found.")
     return result
 
 
 @app.get("/api/applications/{application_id}/cv.{extension}")
 async def download_cv(application_id: str, extension: str) -> Response:
-    """Uyarlanmış CV'yi PDF ya da DOCX olarak indirir."""
+    """Downloads the tailored CV as PDF or DOCX."""
     if extension not in ("pdf", "docx"):
-        raise HTTPException(status_code=400, detail="Biçim 'pdf' veya 'docx' olmalı.")
+        raise HTTPException(status_code=400, detail="Format must be 'pdf' or 'docx'.")
 
     result = await store.get_application(application_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Başvuru kiti bulunamadı.")
+        raise HTTPException(status_code=404, detail="Application kit not found.")
 
     try:
         if extension == "pdf":

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Agent servisini (8000) ve web arayüzünü (3001) başlatır.
-# Loglar: /tmp/jobagent-{agent,web}.log
+# Starts the agent service (8000) and the web UI (3001).
+# Logs: /tmp/jobagent-{agent,web}.log
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -10,17 +10,17 @@ cd "$ROOT"
 
 if [ ! -f agent/.env ]; then
   cp agent/.env.example agent/.env
-  echo "agent/.env oluşturuldu (örnekten). Model sağlayıcını seçmek için düzenle:"
+  echo "Created agent/.env from the example. Edit it to pick your model provider:"
   echo "  LLM_PROVIDER=claude_cli | anthropic | openai"
   echo
 fi
 
-# Servisi kendi süreç grubunda başlatır ve grup kimliğini PID dosyasına yazar.
+# Starts a service in its own process group and writes the group id to a PID file.
 #
-# Grup şart: `npm run dev` torun süreç (next-server) açıyor, sadece ebeveyni
-# öldürmek portu tutan torunu sahipsiz bırakıyor.
-# Kimliği çocuk kendisi yazıyor: `setsid` fork ettiği için kabuğun gördüğü `$!`
-# grup lideri DEĞİL — o değere göre öldürmek hiçbir şeyi durdurmuyor.
+# The group matters: `npm run dev` spawns a grandchild (next-server); killing only
+# the parent orphans the grandchild that holds the port.
+# The child writes the id itself: because `setsid` forks, the `$!` the shell sees
+# is NOT the group leader — killing that value stops nothing.
 start_service() {
   local name="$1" dir="$2"; shift 2
   rm -f "/tmp/jobagent-$name.pid"
@@ -40,25 +40,25 @@ start_service web web npm run dev
 
 read_pid() { cat "/tmp/jobagent-$1.pid" 2>/dev/null | tr -dc '0-9'; }
 
-# Portun yanıt vermesi yetmez: yanıtı BİZİM başlattığımız süreç mi veriyor?
-# Eski bir süreç portu tutuyorsa kullanıcı değişikliklerinin neden görünmediğini
-# anlayamaz — o yüzden süreçlerin canlı olduğunu da doğruluyoruz.
+# A responding port is not enough: is the response coming from the process WE
+# started? If a stale process holds the port the user cannot tell why their
+# changes are not showing up — so we verify our processes are alive too.
 for _ in $(seq 1 40); do
   sleep 1
   agent_pid="$(read_pid agent)"; web_pid="$(read_pid web)"
-  [ -n "$agent_pid" ] && [ -n "$web_pid" ] || continue   # henüz yazılmadı
+  [ -n "$agent_pid" ] && [ -n "$web_pid" ] || continue   # not written yet
 
-  kill -0 "$agent_pid" 2>/dev/null || { echo "Agent süreci öldü — tail -30 /tmp/jobagent-agent.log"; exit 1; }
-  kill -0 "$web_pid" 2>/dev/null || { echo "Web süreci öldü — tail -30 /tmp/jobagent-web.log"; exit 1; }
+  kill -0 "$agent_pid" 2>/dev/null || { echo "Agent process died — tail -30 /tmp/jobagent-agent.log"; exit 1; }
+  kill -0 "$web_pid" 2>/dev/null || { echo "Web process died — tail -30 /tmp/jobagent-web.log"; exit 1; }
 
   agent_ok="$(curl -s -o /dev/null -w '%{http_code}' -m 3 http://127.0.0.1:8000/api/health 2>/dev/null || echo 000)"
   web_ok="$(curl -s -o /dev/null -w '%{http_code}' -m 3 http://127.0.0.1:3001/ 2>/dev/null || echo 000)"
   if [ "$agent_ok" = "200" ] && [ "$web_ok" = "200" ]; then
     echo
-    echo "Hazır. Tarayıcıda aç: http://localhost:3001"
+    echo "Ready. Open in your browser: http://localhost:3001"
 
-    # Seçili sağlayıcı hazır mı? Kullanıcı CV yükleyip 30 saniye bekledikten
-    # sonra değil, şimdi öğrensin.
+    # Is the selected provider ready? The user should learn that now, not after
+    # uploading a CV and waiting 30 seconds.
     llm_line="$(curl -s -m 3 http://127.0.0.1:8000/api/health \
       | agent/.venv/bin/python -c '
 import json, sys
@@ -75,14 +75,14 @@ print("\t".join([str(d["ready"]), d["provider"], d["model"], d["detail"]]))
     fi
     if [ "$llm_ready" != "True" ]; then
       echo
-      echo "UYARI: LLM adımları (CV analizi + eşleştirme) çalışmaz."
-      echo "       ${llm_detail:-Sağlayıcı hazır değil; agent/.env dosyasını kontrol et.}"
+      echo "WARNING: the LLM steps (CV analysis + matching) will not work."
+      echo "       ${llm_detail:-Provider not ready; check agent/.env.}"
     fi
     exit 0
   fi
 done
 
-echo "Servisler 40 saniyede yanıt vermedi. Loglara bak:"
+echo "Services did not respond within 40 seconds. Check the logs:"
 echo "  tail -30 /tmp/jobagent-agent.log"
 echo "  tail -30 /tmp/jobagent-web.log"
 exit 1

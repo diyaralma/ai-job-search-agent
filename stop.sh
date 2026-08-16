@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# start.sh ile başlatılan servisleri durdurur.
+# Stops the services started by start.sh.
 #
-# Yalnızca kendi PID dosyalarımızdaki süreç GRUPLARINI durdurur — makinedeki
-# başka Next.js/uvicorn uygulamalarına dokunmaz.
+# Only kills the process GROUPS recorded in our own PID files — it never touches
+other Next.js/uvicorn apps on the machine.
 set -uo pipefail
 
 for name in agent web; do
@@ -12,14 +12,14 @@ for name in agent web; do
   rm -f "$pidfile"
   [ -n "${pgid:-}" ] || continue
 
-  # PID dosyası eskimiş olabilir ve o numara artık başka bir sürece ait olabilir.
-  # Grup halinde öldürdüğümüz için önce gerçekten bizim servisimiz mi diye bak.
+  # The PID file may be stale and that number may now belong to another process.
+  # Since we kill a whole group, check that it really is our service first.
   leader_cmd="$(ps -o args= -p "$pgid" 2>/dev/null || true)"
   case "$leader_cmd" in
     *uvicorn*|*next*|*npm*) ;;
-    "") continue ;;   # süreç zaten yok
+    "") continue ;;   # process is already gone
     *)
-      echo "$name: PID dosyası eskimiş (pid $pgid başka bir sürece ait), atlanıyor"
+      echo "$name: stale PID file (pid $pgid belongs to another process), skipping"
       continue
       ;;
   esac
@@ -30,6 +30,6 @@ for name in agent web; do
       kill -0 -- "-$pgid" 2>/dev/null || break
     done
     kill -KILL -- "-$pgid" 2>/dev/null || true
-    echo "$name durduruldu (grup $pgid)"
+    echo "$name stopped (group $pgid)"
   fi
 done

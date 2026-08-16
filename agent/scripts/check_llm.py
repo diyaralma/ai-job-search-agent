@@ -1,7 +1,8 @@
-"""Seçili LLM sağlayıcısını tek ucuz çağrıyla doğrular.
+"""Verifies the selected LLM provider with a single cheap call.
 
-CV yüklemeden önce çalıştır: anahtar eksikse, model adı yanlışsa ya da oturum
-düşmüşse buradan net bir hata alırsın — 30 saniyelik CV analizinin sonunda değil.
+Run it before uploading a CV: if a key is missing, the model name is wrong or
+the session expired, you get a clear error here rather than at the end of a
+30-second CV analysis.
 
     ./.venv/bin/python scripts/check_llm.py
 """
@@ -22,26 +23,26 @@ from app.llm import LLMError, provider_status, structured  # noqa: E402
 
 
 class Ping(BaseModel):
-    ok: bool = Field(description="Her zaman true döndür")
-    note: str = Field(description="Tek kelimeyle 'hazir' yaz")
+    ok: bool = Field(description="Always return true")
+    note: str = Field(description="Write the single word 'ready'")
 
 
 HINTS = {
     "claude_cli": [
-        "Claude Code oturumu düşmüş olabilir (`claude` komutunu çalıştırıp giriş yap)",
-        "Üyelik kullanım limitine ulaşılmış olabilir",
-        "LLM_MODEL ayarındaki modele erişimin olmayabilir",
+        "The Claude Code session may have expired (run `claude` and log in)",
+        "You may have hit your subscription usage limit",
+        "You may not have access to the model in LLM_MODEL",
     ],
     "anthropic": [
-        "ANTHROPIC_API_KEY geçersiz ya da kredisi bitmiş olabilir",
-        "LLM_MODEL adı yanlış olabilir (ör. claude-opus-5, claude-sonnet-5)",
-        "`anthropic` paketi kurulu olmayabilir: ./.venv/bin/pip install anthropic",
+        "ANTHROPIC_API_KEY may be invalid or out of credit",
+        "LLM_MODEL may be wrong (e.g. claude-opus-5, claude-sonnet-5)",
+        "The `anthropic` package may not be installed: ./.venv/bin/pip install anthropic",
     ],
     "openai": [
-        "LLM_BASE_URL yanlış olabilir — çoğu uçta sonunda /v1 olmalı",
-        "LLM_MODEL sunucuda yüklü olmayabilir (yerel sunucularda `ollama list` vb.)",
-        "API anahtarı eksik ya da geçersiz olabilir",
-        "Sunucu JSON şeması desteklemiyorsa LLM_JSON_MODE=object ya da prompt dene",
+        "LLM_BASE_URL may be wrong — most endpoints need a trailing /v1",
+        "LLM_MODEL may not be loaded on the server (`ollama list` and friends)",
+        "The API key may be missing or invalid",
+        "If the server has no schema support, try LLM_JSON_MODE=object or prompt",
     ],
 }
 
@@ -50,35 +51,35 @@ async def main() -> int:
     settings = get_settings()
     status = provider_status()
 
-    print(f"sağlayıcı : {settings.llm_provider}")
-    print(f"model     : {settings.active_model or '(tanımsız)'}")
+    print(f"provider : {settings.llm_provider}")
+    print(f"model    : {settings.active_model or '(unset)'}")
     if settings.llm_provider == "openai":
-        print(f"uç        : {settings.api_base_url}")
-    print(f"durum     : {status.detail}")
+        print(f"endpoint : {settings.api_base_url}")
+    print(f"status   : {status.detail}")
 
     if not status.ready:
-        print("\nBAŞARISIZ: sağlayıcı hazır değil (yukarıdaki durum satırına bak).")
+        print("\nFAILED: provider not ready (see the status line above).")
         return 1
 
-    print("çağrı yapılıyor…")
+    print("calling…")
     started = time.perf_counter()
     try:
         result = await structured(
             schema=Ping,
-            system="Sen bir sağlık kontrolü uç noktasısın. Yalnızca istenen JSON'u üret.",
+            system="You are a health-check endpoint. Produce only the requested JSON.",
             prompt="ping",
             timeout=120,
         )
     except LLMError as exc:
-        print(f"\nBAŞARISIZ: {exc}")
-        print("\nOlası nedenler:")
+        print(f"\nFAILED: {exc}")
+        print("\nPossible causes:")
         for hint in HINTS.get(settings.llm_provider, []):
             print(f"  - {hint}")
         return 1
 
     elapsed = time.perf_counter() - started
-    print(f"\nBAŞARILI: {result.note} (ok={result.ok}) — {elapsed:.1f} sn")
-    print("CV yükleyip arama yapabilirsin.")
+    print(f"\nOK: {result.note} (ok={result.ok}) — {elapsed:.1f}s")
+    print("You can upload a CV and run a search.")
     return 0
 
 

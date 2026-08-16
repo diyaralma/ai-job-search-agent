@@ -24,7 +24,7 @@ export default function Home() {
   const [warning, setWarning] = useState<string | null>(null);
   const [llm, setLlm] = useState<Health["llm"] | null>(null);
 
-  // Sayfa yenilendiğinde CV'yi tekrar yükletmemek için profili sakla
+  // Keep the profile so a page refresh does not force re-uploading the CV
   useEffect(() => {
     const stored = localStorage.getItem(PROFILE_STORAGE_KEY);
     if (stored) {
@@ -36,19 +36,19 @@ export default function Home() {
     }
   }, []);
 
-  // Servis ayakta mı, seçili model sağlayıcısı hazır mı — kullanıcı arama
-  // başlatmadan uyar. Uyarı metnini agent üretiyor: hangi sağlayıcı seçiliyse
-  // eksik olan da ona göre değişiyor (CLI, API anahtarı, model adı…).
+  // Is the service up and is the selected model provider ready — warn before the
+  // user starts a search. The agent produces the warning text: what is missing
+  // depends on which provider is selected (CLI, API key, model name…).
   useEffect(() => {
     getHealth()
       .then((health) => {
         setLlm(health.llm);
         if (!health.llm.ready) {
-          setWarning(`CV analizi ve eşleştirme çalışmayacak. ${health.llm.detail}`);
+          setWarning(`CV analysis and matching will not work. ${health.llm.detail}`);
         }
       })
       .catch((err: unknown) => {
-        setWarning(err instanceof Error ? err.message : "Agent servisine ulaşılamadı.");
+        setWarning(err instanceof Error ? err.message : "Could not reach the agent service.");
       });
   }, []);
 
@@ -73,7 +73,7 @@ export default function Home() {
     try {
       setResult(await runSearch(profile.profile_id, criteria));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Arama başarısız oldu.");
+      setError(err instanceof Error ? err.message : "The search failed.");
     } finally {
       setSearching(false);
     }
@@ -83,11 +83,11 @@ export default function Home() {
     <main className="mx-auto max-w-4xl px-4 py-10 sm:py-14">
       <header className="mb-8">
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 sm:text-3xl">
-          AI İş Arama Ajanı
+          AI Job Search Agent
         </h1>
         <p className="mt-2 text-gray-600">
-          CV'nizi yükleyin, kriterlerinizi belirleyin. Ajan açık iş ilanı kaynaklarını ve
-          şirketlerin kendi başvuru panolarını tarayıp size uygunluğuna göre sıralar.
+          Upload your CV and set your criteria. The agent scans open job sources and
+          employers&apos; own application boards, then ranks the results by how well they fit you.
         </p>
         {llm && (
           <p className="mt-3 flex items-center gap-2 text-xs text-gray-500">
@@ -102,7 +102,7 @@ export default function Home() {
               Model: <span className="font-medium text-gray-700">{llm.provider}</span> ·{" "}
               {llm.model}
             </span>
-            <span className="text-gray-400">— agent/.env içinden değiştirilir</span>
+            <span className="text-gray-400">— change it in agent/.env</span>
           </p>
         )}
       </header>
@@ -115,7 +115,7 @@ export default function Home() {
 
       <div className="space-y-6">
         <section>
-          <StepLabel n={1} title="CV yükle" done={!!profile} />
+          <StepLabel n={1} title="Upload CV" done={!!profile} />
           {profile ? (
             <ProfileCard data={profile} onReset={handleReset} />
           ) : (
@@ -125,7 +125,7 @@ export default function Home() {
 
         {profile && (
           <section>
-            <StepLabel n={2} title="Kriterleri belirle" done={!!result} />
+            <StepLabel n={2} title="Set criteria" done={!!result} />
             <CriteriaForm
               criteria={criteria}
               onChange={setCriteria}
@@ -144,17 +144,17 @@ export default function Home() {
         {searching && (
           <div className="rounded-xl border border-gray-200 bg-white p-8 text-center">
             <p className="text-sm font-medium text-gray-800">
-              İlanlar taranıyor ve size göre değerlendiriliyor…
+              Scanning postings and evaluating them for you…
             </p>
             <p className="mt-1 text-xs text-gray-500">
-              Kaynaklardan toplama + yapay zekâ skorlaması genelde 30-90 saniye sürer.
+              Collecting from the sources plus AI scoring usually takes 30-90 seconds.
             </p>
           </div>
         )}
 
         {result && profile && !searching && (
           <section>
-            <StepLabel n={3} title="Sonuçlar" done />
+            <StepLabel n={3} title="Results" done />
             <MatchList result={result} profileId={profile.profile_id} />
           </section>
         )}
@@ -162,11 +162,11 @@ export default function Home() {
 
       <footer className="mt-14 border-t border-gray-200 pt-6 text-xs text-gray-500">
         <p>
-          İlanlar açık API'lerden (Remotive, Jobicy, Himalayas, RemoteOK, Arbeitnow,
-          Adzuna, Jooble) ve şirketlerin ATS panolarından (Greenhouse, Lever, Ashby,
-          Workable) toplanır. İlana özel CV'ler profilindeki gerçeklerden üretilir —
-          eksik yetkinlikler uydurulmaz, ayrıca listelenir. Başvurular her zaman ilan
-          sahibinin kendi sistemi üzerinden yapılır.
+          Postings are collected from open APIs (Remotive, Jobicy, Himalayas, RemoteOK,
+          Arbeitnow, Adzuna, Jooble) and from employers&apos; own ATS boards (Greenhouse,
+          Lever, Ashby, Workable). Tailored CVs are built only from facts in your profile —
+          missing skills are never invented, they are listed separately. Applications always
+          go through the job owner&apos;s own system.
         </p>
       </footer>
     </main>

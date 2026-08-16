@@ -1,9 +1,9 @@
-"""SQLite kalıcılık katmanı.
+"""SQLite persistence layer.
 
-MVP için tek dosyalık SQLite yeterli: profiller ve arama sonuçları saklanıyor,
-böylece kullanıcı sayfayı yenilediğinde CV'yi yeniden yüklemek ve aramayı
-baştan çalıştırmak zorunda kalmıyor. Çok kullanıcılı üretim için buradan
-Postgres'e geçilmesi gerekir (bkz. README).
+A single-file SQLite database is enough for the MVP: profiles and search results
+are stored so the user does not have to re-upload their CV and re-run the search
+after a page refresh. Multi-user production would need Postgres instead (see
+README).
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# -- Profiller -------------------------------------------------------------
+# -- Profiles --------------------------------------------------------------
 def _save_profile_sync(profile_id: str, filename: str, profile: CandidateProfile) -> str:
     created = _now()
     with _connect() as conn:
@@ -126,7 +126,7 @@ async def get_profile(profile_id: str) -> ProfileResponse | None:
     )
 
 
-# -- Aramalar --------------------------------------------------------------
+# -- Searches --------------------------------------------------------------
 def _save_search_sync(
     search_id: str,
     profile_id: str,
@@ -214,12 +214,12 @@ async def list_searches(profile_id: str, limit: int = 20) -> list[dict]:
     ]
 
 
-# -- Başvuru kitleri -------------------------------------------------------
+# -- Application kits ------------------------------------------------------
 def _find_job_sync(job_id: str) -> str | None:
-    """İlanı arama sonuçlarından bul.
+    """Find the posting in stored search results.
 
-    İstemcinin ilan gövdesini geri göndermesine gerek kalmıyor; kaynak veri
-    sunucuda kalıyor ve uydurulmuş bir ilan için kit üretilemiyor.
+    The client never has to send the posting body back; the source data stays on
+    the server and no kit can be generated for a fabricated posting.
     """
     with _connect() as conn:
         row = conn.execute(

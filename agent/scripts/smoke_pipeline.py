@@ -1,9 +1,9 @@
-"""Tüm pipeline'ı Anthropic anahtarı OLMADAN uçtan uca test eder.
+"""Tests the whole pipeline end to end with NO LLM access.
 
-LLM çağrılarını (`structured`) sahte yanıtlarla değiştirip planlayıcı,
-kaynaklar, eleme, skorlama, depolama ve API sözleşmesinin doğru
-kablolandığını doğrular. Gerçek model kalitesini ölçmez — onun için
-anahtar tanımlayıp uygulamayı normal çalıştırın.
+It replaces the LLM calls (`structured`) with canned answers and verifies that
+the planner, sources, filtering, scoring, storage and API contract are wired
+correctly. It does not measure real model quality — for that, configure a
+provider and run the app normally.
 
     ./.venv/bin/python scripts/smoke_pipeline.py
 """
@@ -28,7 +28,7 @@ from app.schemas import (  # noqa: E402
 
 PROFILE = CandidateProfile(
     full_name="Ayşe Yılmaz",
-    headline="Backend developer, 5 yıl Python/Django",
+    headline="Backend developer, 5 years of Python/Django",
     email="ayse@example.com",
     phone="",
     location="İstanbul, Türkiye",
@@ -36,10 +36,10 @@ PROFILE = CandidateProfile(
     seniority="senior",
     target_titles=["Backend Engineer", "Python Developer", "Software Engineer"],
     skills=["Python", "Django", "PostgreSQL", "Kafka", "Docker", "Kubernetes", "AWS"],
-    soft_skills=["Mentorluk", "Teknik yazım"],
-    languages=["Türkçe (anadil)", "İngilizce (C1)"],
+    soft_skills=["Mentoring", "Technical writing"],
+    languages=["Turkish (native)", "English (C1)"],
     industries=["E-ticaret", "Teslimat"],
-    education=["BSc Bilgisayar Mühendisliği - Boğaziçi Üniversitesi (2019)"],
+    education=["BSc Computer Engineering - Boğaziçi University (2019)"],
     certifications=[],
     experience=[
         Experience(
@@ -47,10 +47,10 @@ PROFILE = CandidateProfile(
             company="Trendyol",
             start="2022-03",
             end="present",
-            highlights=["Sipariş servisini mikroservise taşıdı"],
+            highlights=["Moved the order service to microservices"],
         )
     ],
-    summary="Beş yıllık deneyimli, mikroservis ve olay tabanlı mimaride güçlü backend geliştirici.",
+    summary="Backend developer with five years of experience, strong in microservices and event-driven architecture.",
 )
 
 PLAN = SearchPlan(
@@ -60,17 +60,17 @@ PLAN = SearchPlan(
     nice_to_have_skills=["Django", "PostgreSQL", "Docker", "AWS", "Kubernetes"],
     exclude_terms=["principal", "director", "sales"],
     locations=["remote", "İstanbul"],
-    rationale="Sahte plan: senior Python/Django profiline uzaktan backend rolleri aranıyor.",
+    rationale="Fake plan: looking for remote backend roles for a senior Python/Django profile.",
 )
 
 
 async def fake_structured(*, schema, system, prompt, timeout=None):
-    """LLM yerine geçen sahte üretici."""
+    """Stand-in generator that replaces the LLM."""
     if schema is SearchPlan:
         return PLAN
 
     if schema is ScoredBatch:
-        # Prompt içindeki 'id: <job_id>' satırlarını yakalayıp her biri için skor üret
+        # Grab the 'id: <job_id>' lines from the prompt and score each one
         job_ids = [
             line.split("id:", 1)[1].strip()
             for line in prompt.splitlines()
@@ -88,18 +88,18 @@ async def fake_structured(*, schema, system, prompt, timeout=None):
                     verdict=verdict,
                     matched_skills=["Python", "Docker"],
                     missing_skills=["Go"] if index % 2 else [],
-                    reasons=["Sahte gerekçe: profil ile teknoloji yığını örtüşüyor."],
-                    risks=[] if index % 3 else ["Sahte risk: lokasyon net değil."],
+                    reasons=["Fake reason: the profile overlaps with the tech stack."],
+                    risks=[] if index % 3 else ["Fake risk: the location is unclear."],
                 )
             )
-        # Bir ilanı kasten atlıyoruz: eksik skor telafisi çalışıyor mu?
+        # Deliberately skip one posting: does the missing-score fallback work?
         return ScoredBatch(scores=scores[:-1] if len(scores) > 1 else scores)
 
-    raise AssertionError(f"Beklenmeyen şema: {schema}")
+    raise AssertionError(f"Unexpected schema: {schema}")
 
 
 async def main() -> int:
-    # LLM'i kullanan iki modülü de yamala (her ikisi de ismi doğrudan import ediyor)
+    # Patch both modules that use the LLM (both import the name directly)
     from app.match import scorer
     from app.search import planner
 
@@ -122,38 +122,38 @@ async def main() -> int:
         for name, err in stats.source_errors.items():
             print(f"  ! {name}: {err}")
     print(
-        f"çekilen/tekil/eleme: {stats.fetched} / {stats.after_dedupe} / {stats.after_prefilter}"
+        f"fetched/unique/filtered: {stats.fetched} / {stats.after_dedupe} / {stats.after_prefilter}"
     )
     print(f"llm skorlanan     : {stats.llm_scored}")
-    print(f"sonuç             : {len(matches)} eşleşme, {stats.duration_ms} ms")
+    print(f"result            : {len(matches)} matches, {stats.duration_ms} ms")
 
     await store.save_search("srch_smoke", "prof_smoke", criteria, plan, stats, matches)
     reloaded = await store.get_search("srch_smoke")
     assert reloaded is not None, "arama kaydedilemedi"
-    assert len(reloaded.matches) == len(matches), "kaydedilen eşleşme sayısı tutmuyor"
-    print(f"depolama turu     : {len(reloaded.matches)} eşleşme geri okundu")
+    assert len(reloaded.matches) == len(matches), "stored match count does not line up"
+    print(f"storage round-trip: {len(reloaded.matches)} matches read back")
 
     rules_fallback = sum(1 for m in matches if m.scored_by == "rules")
-    print(f"kural yedeği      : {rules_fallback} ilan (atlanan skorlar telafi edildi)")
+    print(f"rule fallback     : {rules_fallback} postings (skipped scores compensated)")
 
-    print("\nilk 5 sonuç:")
+    print("\ntop 5 results:")
     for m in matches[:5]:
         print(f"  {m.score:3d} {m.verdict:<8} {m.job.title[:48]:<48} @ {m.job.company[:22]}")
 
     problems = []
     if not matches:
-        problems.append("hiç eşleşme üretilmedi")
+        problems.append("no matches were produced")
     if len({m.job.id for m in matches}) != len(matches):
-        problems.append("sonuçlarda tekrar eden ilan var")
+        problems.append("duplicate postings in the results")
     if any(m.score < 0 or m.score > 100 for m in matches):
-        problems.append("skor 0-100 aralığı dışında")
+        problems.append("score outside the 0-100 range")
     if matches != sorted(matches, key=lambda m: (m.score, m.prefilter_score), reverse=True):
-        problems.append("sonuçlar skora göre sıralı değil")
+        problems.append("results are not ordered by score")
 
     if problems:
         print("\nSORUN:", "; ".join(problems))
         return 1
-    print("\nTüm kontroller geçti.")
+    print("\nAll checks passed.")
     return 0
 
 

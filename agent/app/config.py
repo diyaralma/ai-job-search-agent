@@ -7,12 +7,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LLMProvider = Literal["claude_cli", "anthropic", "openai"]
 
-#: Sağlayıcı başına varsayılan model.
+#: Default model per provider.
 #:
-#: "openai" bilerek boş: OpenAI-uyumlu uçlarda (OpenRouter, Groq, Ollama,
-#: LM Studio, vLLM…) geçerli model adı sunucuya göre değişiyor. Tahmin etmek
-#: kullanıcıyı "model not found" hatasına götürmekten başka işe yaramaz;
-#: bunun yerine LLM_MODEL'i zorunlu tutup net hata veriyoruz.
+#: "openai" is deliberately empty: on OpenAI-compatible endpoints (OpenRouter,
+#: Groq, Ollama, LM Studio, vLLM…) the valid model name depends on the server.
+#: Guessing one only leads the user into a "model not found" error, so we
+#: require LLM_MODEL instead and fail with a clear message.
 DEFAULT_MODELS: dict[str, str] = {
     "claude_cli": "claude-opus-5",
     "anthropic": "claude-opus-5",
@@ -25,51 +25,51 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    # -- Model erişimi ------------------------------------------------------
-    # Üç sağlayıcı: bkz. app/llm.py
-    #   claude_cli  Claude Code CLI (`claude -p`) — API anahtarı yok, üyelik oturumu
+    # -- Model access -------------------------------------------------------
+    # Three providers: see app/llm.py
+    #   claude_cli  Claude Code CLI (`claude -p`) — no API key, uses your session
     #   anthropic   Anthropic API — ANTHROPIC_API_KEY
-    #   openai      OpenAI ve OpenAI-uyumlu her uç (LLM_BASE_URL ile)
+    #   openai      OpenAI and any OpenAI-compatible endpoint (via LLM_BASE_URL)
     llm_provider: LLMProvider = "claude_cli"
-    llm_model: str = ""          # boş → DEFAULT_MODELS
-    llm_api_key: str = ""        # boş → ANTHROPIC_API_KEY / OPENAI_API_KEY
-    llm_base_url: str = ""       # yalnızca openai sağlayıcısı; boş → api.openai.com
+    llm_model: str = ""          # empty -> DEFAULT_MODELS
+    llm_api_key: str = ""        # empty -> ANTHROPIC_API_KEY / OPENAI_API_KEY
+    llm_base_url: str = ""       # openai provider (and optional Anthropic proxy)
     llm_timeout: float = 300.0
     llm_max_tokens: int = 16000
-    # OpenAI-uyumlu sunucuların hepsi json_schema desteklemiyor (yerel modeller
-    # çoğunlukla desteklemez). "auto" en güçlüsünden başlayıp hata alınca
-    # sırayla düşer ve çalışan kipi hatırlar.
+    # Not every OpenAI-compatible server supports json_schema (local models
+    # usually do not). "auto" starts with the strongest mode, steps down on
+    # error and remembers what worked.
     llm_json_mode: Literal["auto", "schema", "object", "prompt"] = "auto"
 
-    # Standart isimler — kullanıcı zaten ortamında taşıyor olabilir
+    # Standard names — the user may already have these in their environment
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 
-    # Yalnızca claude_cli sağlayıcısı için
+    # claude_cli provider only
     claude_cli: str = "claude"
 
-    # Geriye dönük uyum: eski .env dosyalarındaki isimler
+    # Backwards compatibility with older .env files
     agent_model: str = ""
     claude_timeout: float | None = None
 
-    # -- Opsiyonel ilan kaynakları -----------------------------------------
+    # -- Optional job sources ----------------------------------------------
     adzuna_app_id: str | None = None
     adzuna_app_key: str | None = None
     jooble_api_key: str | None = None
-    # Jooble anahtarları BÖLGESELDİR: jooble.org anahtarı ABD indeksini
-    # sorgular. Türkiye ilanları için anahtarı tr.jooble.org'dan alıp
-    # bu değeri https://tr.jooble.org yap.
+    # Jooble keys are REGIONAL: a jooble.org key queries the US index. For
+    # Turkish postings, get the key from tr.jooble.org and set this to
+    # https://tr.jooble.org
     jooble_host: str = "https://jooble.org"
 
-    # -- Uygulama ----------------------------------------------------------
+    # -- Application --------------------------------------------------------
     db_path: str = "./data/jobsearch.db"
     cors_origins: str = "http://localhost:3001,http://localhost:3000"
 
-    # Sağlayıcıya göre maliyet modeli değişiyor: Claude Code üyeliğinde token
-    # başına ücret yok (duvar saatini optimize et — küçük parti, yüksek
-    # paralellik), API sağlayıcılarında her çağrı ücretli. Varsayılanlar tek
-    # dalgada bitecek şekilde seçildi (32 / 8 = 4 parti, 4 eşzamanlı); ücretli
-    # bir sağlayıcı kullanıyorsan LLM_SCORE_LIMIT'i düşürmek doğrudan tasarruf.
+    # The cost model depends on the provider: with a Claude Code subscription
+    # there is no per-token charge (optimize wall-clock — small batches, high
+    # parallelism), while API providers bill every call. The defaults are picked
+    # to finish in a single wave (32 / 8 = 4 batches, 4 concurrent); on a paid
+    # provider, lowering LLM_SCORE_LIMIT is a direct saving.
     llm_score_limit: int = 32
     score_batch_size: int = 8
     max_concurrency: int = 4
@@ -77,10 +77,10 @@ class Settings(BaseSettings):
     fetch_limit_per_source: int = 120
     http_timeout: float = 25.0
 
-    # -- Türetilmiş değerler ------------------------------------------------
+    # -- Derived values -----------------------------------------------------
     @property
     def active_model(self) -> str:
-        """Çağrılarda kullanılacak model adı (eski AGENT_MODEL da okunur)."""
+        """Model name used for calls (legacy AGENT_MODEL is still honoured)."""
         return self.llm_model or self.agent_model or DEFAULT_MODELS[self.llm_provider]
 
     @property
@@ -89,7 +89,7 @@ class Settings(BaseSettings):
 
     @property
     def api_key(self) -> str:
-        """Seçili sağlayıcının anahtarı; claude_cli için anlamsız (boş döner)."""
+        """Key for the selected provider; meaningless for claude_cli (returns "")."""
         if self.llm_api_key:
             return self.llm_api_key
         if self.llm_provider == "anthropic":
@@ -114,11 +114,11 @@ class Settings(BaseSettings):
 
     @property
     def cli_workdir(self) -> str:
-        """Claude Code'un çalıştırılacağı nötr dizin.
+        """Neutral directory to run Claude Code in.
 
-        Depo içinde çalıştırmak projenin CLAUDE.md'sini ve dosya bağlamını
-        çağrıya sızdırırdı; sonuçların çalışma dizininden bağımsız olması için
-        geçici bir dizin kullanıyoruz.
+        Running inside the repo would leak the project's CLAUDE.md and file
+        context into the call; a temp directory keeps results independent of the
+        working directory.
         """
         path = Path(tempfile.gettempdir()) / "jobagent-cli"
         path.mkdir(parents=True, exist_ok=True)

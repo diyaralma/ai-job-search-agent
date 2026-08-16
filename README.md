@@ -1,395 +1,277 @@
-# AI İş Arama Ajanı
+# AI Job Search Agent
 
-CV yükle → kriterlerini belirle → ajan açık iş ilanı kaynaklarını ve şirketlerin
-kendi başvuru panolarını tarayıp ilanları sana uygunluğuna göre skorlasın.
+Upload your CV, set your criteria, and the agent scans open job boards and
+employers' own ATS boards, then ranks every posting by how well it fits you —
+with a per-posting tailored CV and cover letter on demand.
 
-**Durum:** Arama + ilana özel CV/ön yazı üretimi çalışır durumda.
+**Bring your own LLM.** Claude Code (no API key), the Anthropic API, or any
+OpenAI-compatible endpoint including fully local models via Ollama / LM Studio.
 
 ---
 
-## Model sağlayıcısı: kendi LLM'ini kullan
+## Quick start
 
-Uygulama belirli bir modele bağlı değil. `agent/.env` içindeki tek bir satır
-(`LLM_PROVIDER`) hangi motorun kullanılacağını belirler:
-
-| `LLM_PROVIDER` | Ne gerekir | Kime uygun |
-|---|---|---|
-| `claude_cli` (varsayılan) | Claude Code kurulu + giriş yapılmış | Claude Pro/Max üyeliği olan — **API anahtarı ve kredi gerekmez** |
-| `anthropic` | `ANTHROPIC_API_KEY` | Sunucuda/konteynerde çalıştıracak olan |
-| `openai` | `LLM_MODEL` + (çoğu uçta) API anahtarı | OpenAI, OpenRouter, Groq, Together, DeepSeek, Google'ın OpenAI uçu, **Ollama / LM Studio / vLLM ile tamamen yerel** |
+Requirements: Python 3.12+, Node.js 20+, and one model provider (see below).
 
 ```bash
-# Örnek 1 — OpenAI
+git clone https://github.com/diyaralma/Job-search-automation.git
+cd Job-search-automation/agent
+
+python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+cp .env.example .env                       # pick your provider here
+./.venv/bin/python scripts/check_llm.py    # verify model access
+
+cd ../web && npm install && cd ..
+./start.sh    # agent :8000, web :3001   —   ./stop.sh to stop
+```
+
+Then open **http://localhost:3001**.
+
+If `python3 -m venv` fails (Debian/Ubuntu may lack `python3-venv`):
+
+```bash
+sudo apt install python3-venv python3-pip     # or, without sudo:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+~/.local/bin/uv venv .venv && ~/.local/bin/uv pip install --python .venv/bin/python -r requirements.txt
+```
+
+---
+
+## Choose your LLM
+
+One line in `agent/.env` decides which engine runs everything:
+
+| `LLM_PROVIDER` | What it needs | Good for |
+|---|---|---|
+| `claude_cli` (default) | Claude Code installed and logged in | Anyone with a Claude Pro/Max subscription — **no API key, no credit** |
+| `anthropic` | `ANTHROPIC_API_KEY` | Running on a server or in a container |
+| `openai` | `LLM_MODEL` + (usually) an API key | OpenAI, OpenRouter, Groq, Together, DeepSeek, Google's OpenAI endpoint — and **fully local, free** setups via Ollama / LM Studio / vLLM |
+
+```bash
+# OpenAI
 LLM_PROVIDER=openai
 LLM_MODEL=gpt-4o-mini
 OPENAI_API_KEY=sk-...
 
-# Örnek 2 — tamamen yerel, anahtarsız, ücretsiz (Ollama)
+# Fully local, no key, no cost (Ollama)
 LLM_PROVIDER=openai
 LLM_MODEL=llama3.1:8b
 LLM_BASE_URL=http://localhost:11434/v1
 
-# Örnek 3 — OpenRouter üzerinden herhangi bir model
+# Any model through OpenRouter
 LLM_PROVIDER=openai
 LLM_MODEL=anthropic/claude-sonnet-4.5
 LLM_BASE_URL=https://openrouter.ai/api/v1
 LLM_API_KEY=sk-or-...
 ```
 
-Seçimini doğrula: `cd agent && ./.venv/bin/python scripts/check_llm.py`.
-Sağlayıcının hazır olup olmadığı `http://localhost:3001` sayfasının başlığında
-da yazar; eksik bir şey varsa ne yapılacağını söyleyen bir uyarı çıkar.
+Verify with `cd agent && ./.venv/bin/python scripts/check_llm.py`. The active
+provider is also shown in the page header at localhost:3001 — green dot means
+ready, amber tells you exactly what is missing.
 
-**Tasarım notu — şema garantisi sağlayıcıdan bağımsız.** Pipeline'ın her adımı
-Pydantic şemasına uyan bir yanıt bekliyor. Her sağlayıcı elindeki en güçlü aracı
-kullanıyor (Claude Code'da `--json-schema`, Anthropic API'de structured outputs,
-OpenAI-uyumlu uçlarda `response_format`), dönen metin **her hâlükârda**
-`app/llm.py` içinde Pydantic ile doğrulanıyor. Şema desteklemeyen bir yerel
-sunucuda `LLM_JSON_MODE=auto` sırayla daha zayıf kiplere düşüyor ve çalışan kipi
-hatırlıyor — zayıf bir model şemayı tutturamazsa hata net oluyor, sessizce bozuk
-veri geçmiyor.
-
-### Sağlayıcıya göre değişenler
-
-- **`claude_cli`** — Çağrılar üyelik kullanım limitine sayılır, token başına
-  ücret yok. Bir arama ≈ 6 çağrı (1 plan + 4 skorlama partisi + CV analizi 1).
-  Her çağrı ayrı bir subprocess ve ~16k token sabit ek yük taşıdığı için
-  maliyet yerine **duvar saati** optimize ediliyor: küçük partiler, yüksek
-  paralellik. Docker'da çalışmaz — konteynerin içinde Claude Code oturumu yok.
-- **`anthropic` / `openai`** — Her çağrı ücretli (yerel sunucular hariç), Docker
-  ve sunucu dağıtımı sorunsuz. Ücretli bir sağlayıcıda `LLM_SCORE_LIMIT`
-  değerini düşürmek doğrudan tasarruf: LLM'e giden ilan sayısını azaltır.
+Every step of the pipeline expects a response matching a Pydantic schema. Each
+provider uses the strongest tool it has (`--json-schema` on the CLI, structured
+outputs on the Anthropic API, `response_format` on OpenAI-compatible endpoints)
+and the result is **always** validated in `agent/app/llm.py`. On a server without
+schema support, `LLM_JSON_MODE=auto` steps down to weaker modes and remembers
+what worked.
 
 ---
 
-## Nasıl çalışır
+## Using it
+
+### 1. Upload a CV
+
+PDF, DOCX or TXT — 25 MB max, drag-and-drop works.
+
+Text is extracted locally, then the model turns it into a structured profile:
+target titles, skills, years of experience, seniority, languages, education.
+Takes **10-25 seconds**. If the seniority or titles come out wrong, the PDF's
+reading order was probably scrambled (common with two-column designs) — upload
+the same CV as DOCX.
+
+The profile is cached in the browser, so a refresh does not mean re-uploading.
+Use **"Upload a different CV"** on the profile card to start over.
+
+### 2. Set criteria
+
+| Field | Notes |
+|---|---|
+| **Countries / Cities** | Comma separated. Leave empty for no geographic filter. |
+| **Work mode** | Remote / Hybrid / Onsite. With "Remote", a posting's **own** geo restriction is checked too — a "Remote — US only" job is not shown to a candidate in Turkey. |
+| **Seniority** | All levels if none selected. |
+| **Exclude keywords** | Dropped if they appear in the job **title** (`sales, unpaid, commission`). |
+| **Exclude companies** | Former employers, companies you'd rather not see. |
+| **Max posting age (days)** | Default 45. |
+| **Number of results** | Default 40. |
+
+### 3. Search and read the results
+
+A search takes **30-90 seconds** and stays open for the whole HTTP request —
+don't close the tab. In that time it builds a search plan, scans the sources in
+parallel, applies rule-based filtering, and has the model score what survives.
+
+The four numbers at the top of the results show that funnel: **fetched → after
+dedupe → passed pre-filter → scored by AI**. A big drop is normal; the rule layer
+removes obvious mismatches.
+
+Each card carries a score (0-100), a verdict (`strong` / `good` / `stretch` /
+`poor`), matched and missing skills, the reasoning behind the score, and any
+risks worth checking before applying. Two banners can appear:
+
+- **"The pool matching your criteria is thin"** — very little passed the filter;
+  loosen the criteria or raise the posting age.
+- **"Nothing matched your criteria"** — nothing survived, so filters were
+  relaxed automatically; the results shown may fall outside your criteria.
+
+### 4. Generate a tailored CV and cover letter
+
+**"Tailor a CV for this job"** on any card produces a kit in **20-40 seconds**:
+an adapted CV (downloadable as **PDF** and **DOCX**), a cover letter in the
+posting's language, a "Why me?" answer, talking points, and a transparency
+section. Each text block has a **Copy** button for pasting into application
+forms.
+
+The model only reframes facts already in your profile. It never claims
+experience you do not have — anything the posting wants and you lack is listed
+under "May come up in the interview" instead. That constraint is deliberate: an
+interview won on a false claim collapses at the first technical question, and a
+submitted application cannot be recalled.
+
+### 5. Apply
+
+The link on the card takes you to the posting itself. Applications always go
+through the job owner's own system — the app never fills in forms on your
+behalf. Auto-apply is only reliable on employer ATS boards
+(Greenhouse/Lever/Ashby/Workable); postings from aggregators redirect through
+click trackers to arbitrary employer sites that cannot be resolved
+programmatically.
+
+When you're done: `./stop.sh`.
+
+### What a search costs
+
+Roughly **6 model calls** per search (1 plan + 4 scoring batches + 1 per kit; CV
+analysis is 1 more). On `claude_cli` these count against your subscription usage
+with no token charge. On a paid provider the biggest line item is scoring:
+halving `LLM_SCORE_LIMIT` (32 → 16) halves it, at the cost of evaluating fewer
+postings.
+
+### Troubleshooting
+
+| Symptom | What to do |
+|---|---|
+| Amber dot / amber warning box | The provider is not ready. `cd agent && ./.venv/bin/python scripts/check_llm.py` prints the exact reason. |
+| `Model output did not match the schema` | The model can't hold the schema — usually a small local one. Try a bigger model, or `LLM_JSON_MODE=object` (some servers need `prompt`). |
+| `The response was cut off at LLM_MAX_TOKENS` | Raise `LLM_MAX_TOKENS`, or lower `SCORE_BATCH_SIZE`. |
+| Rate/quota limit (429) | Lower `MAX_CONCURRENCY`. |
+| No Turkish postings in the results | None of the key-free sources carry Turkish listings. Set `JOOBLE_HOST=https://tr.jooble.org` plus a `JOOBLE_API_KEY` obtained from that region. |
+| "Could not reach the agent service" | `tail -30 /tmp/jobagent-agent.log` — the service may have crashed. |
+| Port 3001 in use | Run the web app on another port and add that address to `CORS_ORIGINS` in `agent/.env`. |
+
+---
+
+## Configuration
+
+Main settings in `agent/.env` (full list with comments in `agent/.env.example`):
+
+| Variable | Default | What it does |
+|---|---|---|
+| `LLM_PROVIDER` | `claude_cli` | `claude_cli` / `anthropic` / `openai` |
+| `LLM_MODEL` | provider default | Model name; required for the `openai` provider |
+| `LLM_API_KEY` | — | Key; `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` are read too |
+| `LLM_BASE_URL` | — | OpenAI-compatible endpoint (most need a trailing `/v1`) |
+| `LLM_TIMEOUT` | `300` | Seconds per model call |
+| `LLM_MAX_TOKENS` | `16000` | Token ceiling per response |
+| `LLM_JSON_MODE` | `auto` | Schema enforcement (`openai` only): `auto`/`schema`/`object`/`prompt` |
+| `LLM_SCORE_LIMIT` | `32` | How many postings reach the LLM — the main cost lever |
+| `SCORE_BATCH_SIZE` | `8` | Postings per call |
+| `MAX_CONCURRENCY` | `4` | Batches in flight at once |
+| `JOOBLE_HOST` | `https://jooble.org` | Region the key came from; `https://tr.jooble.org` for Turkey |
+| `ADZUNA_APP_ID/KEY`, `JOOBLE_API_KEY` | — | Empty disables that source silently |
+
+**Companies to track:** add ATS board ids to `agent/app/sources/companies.json`.
+You can read the id off a posting URL: `boards.greenhouse.io/<token>`,
+`jobs.lever.co/<company>`, `jobs.ashbyhq.com/<board>`, `<account>.workable.com`.
+A broken id is skipped silently. **The bundled list is US-centric sample data —
+replace it with your own targets.**
+
+---
+
+## How it works
 
 ```
 CV (PDF/DOCX/TXT)
-  └─> metin çıkarımı (yerel)                     agent/app/cv/
+  └─> local text extraction                        agent/app/cv/
         └─> [LLM] CandidateProfile
-              └─> [LLM] SearchPlan (sorgular, unvanlar, zorunlu yetkinlikler)
-                    └─> kaynaklardan paralel toplama    agent/app/sources/
-                          └─> tekilleştirme + sert filtreler (kural)
-                                └─> ön sıralama + kaynak kotası (kural) → 32 ilan
-                                      └─> [LLM] uygunluk skorlaması (4 paralel parti)
-                                            └─> sıralı sonuç + gerekçe
+              └─> [LLM] SearchPlan (queries, titles, must-have skills)
+                    └─> parallel fetch from sources        agent/app/sources/
+                          └─> dedupe + hard filters (rules)
+                                └─> pre-ranking + per-source quota → 32 postings
+                                      └─> [LLM] fit scoring (4 parallel batches)
+                                            └─> ranked results with reasoning
 ```
 
-İki aşamalı eleme bilinçli: kaynaklardan yüzlerce ilan geliyor, hepsini modele
-göndermek hem yavaş hem gereksiz. Kural katmanı belirgin uyumsuzları eliyor,
-LLM sadece gerçek karar gerektiren ilanlara bakıyor.
+Two-stage filtering is deliberate: sources return hundreds of postings and
+sending all of them to a model is slow and pointless. The rule layer drops the
+obvious mismatches; the LLM only looks at postings that need real judgement. No
+single source may take more than half the LLM budget — ATS boards return much
+longer posting text, which would otherwise let a handful of tracked companies
+crowd out everything else.
 
-**Kaynak kotası** neden var: ATS panoları çok daha uzun ilan metni döndürüyor,
-bu onlara ön elemede yapısal avantaj veriyor. Sınır olmadan takip edilen birkaç
-şirket tüm sonuçları dolduruyor ve diğer kaynaklardaki uygun ilanlar hiç
-değerlendirilmiyor. Tek kaynak LLM bütçesinin en fazla yarısını alabilir.
+**Sources:** Remotive, Jobicy, Himalayas, RemoteOK, Arbeitnow and employer ATS
+boards (Greenhouse, Lever, Ashby, Workable) need no key. Adzuna (free tier) and
+Jooble (free) need one. Jobicy and Himalayas expose geo restrictions as
+structured data, so "Remote — United States" is filtered on data rather than
+guesswork.
 
-### Neden bu kaynaklar
+**No LinkedIn or Indeed:** neither has a usable public API for this (LinkedIn's
+Job Postings API is limited to partner ATS vendors, Indeed closed its publisher
+API to new applicants). Scraping violates their terms and gets blocked. The
+legitimate route is Google Jobs via SerpAPI (~$50/month), which indexes both —
+adding it means one new class under `agent/app/sources/`.
 
-| Kaynak | Anahtar | Kapsam | Coğrafi kısıt verisi |
-|---|---|---|---|
-| Remotive | — | Uzaktan çalışma ilanları | metin |
-| Jobicy | — | Uzaktan çalışma ilanları | **yapılandırılmış** (`jobGeo`) |
-| Himalayas | — | Uzaktan çalışma ilanları | **yapılandırılmış** (`locationRestrictions`) |
-| RemoteOK | — | Uzaktan çalışma ilanları | metin |
-| Arbeitnow | — | Avrupa, ağırlıklı Almanya | metin |
-| Greenhouse / Lever / Ashby / Workable | — | Şirketlerin **kendi** başvuru panoları | metin |
-| Adzuna | ücretsiz tier | ABD, İngiltere, Almanya, +14 ülke | metin |
-| Jooble | ücretsiz | Türkiye dahil geniş coğrafya | metin |
-
-Jobicy ve Himalayas'ın coğrafi kısıtı yapılandırılmış vermesi önemli: "Remote —
-United States" ilanının Türkiye'deki adaya gösterilmemesi tahmine değil, veriye
-dayanıyor.
-
-### LinkedIn ve Indeed neden yok
-
-İkisinin de bu iş için açık API'si yok — LinkedIn'in İş İlanları API'si yalnızca
-anlaşmalı ATS sağlayıcılarına veriliyor, Indeed halka açık yayıncı API'sini yeni
-başvurulara kapattı. Geriye kazıma kalıyor; o da kullanım sözleşmesini ihlal
-ediyor, aktif olarak engelleniyor (giriş duvarı, bot tespiti) ve hesap
-kısıtlamasına yol açabiliyor.
-
-Bu ilanlara meşru zeminde ulaşmak istiyorsan yol **Google Jobs / SerpAPI**:
-Google'ın indeksi üzerinden LinkedIn ve Indeed ilanlarını da kapsıyor, aylık
-~50$ civarı ücretli. Eklemek istersen `agent/app/sources/` altına yeni bir
-kaynak sınıfı yeterli — arayüz ve pipeline değişmiyor.
-
----
-
-## Kurulum
-
-### Gereksinimler
-- Python 3.12+, Node.js 20+
-- Bir model sağlayıcısı (yukarıdaki tablo). Varsayılan `claude_cli` için Claude
-  Code kurulu ve giriş yapılmış olmalı (`claude --version` çalışmalı);
-  kullanmıyorsan `agent/.env` içinde `LLM_PROVIDER` değerini değiştir.
-
-### Hızlı başlangıç
+### Verification scripts
 
 ```bash
 cd agent
-python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
-cp .env.example .env                       # sağlayıcını seç: LLM_PROVIDER=...
-./.venv/bin/python scripts/check_llm.py    # model erişimini doğrula
-cd .. && (cd web && npm install)
-
-./start.sh    # agent :8000, web :3001
-./stop.sh     # durdurmak için
+./.venv/bin/python scripts/test_prefilter.py   # rule-layer unit tests (no LLM, seconds)
+./.venv/bin/python scripts/smoke_sources.py    # are the sources alive (no LLM)
+./.venv/bin/python scripts/smoke_pipeline.py   # whole pipeline (LLM faked)
+./.venv/bin/python scripts/check_llm.py        # model access (1 real call)
 ```
 
-`python3 -m venv` çalışmazsa (Debian/Ubuntu'da `python3-venv` paketi eksik olabilir):
+### Known limits
 
-```bash
-sudo apt install python3-venv python3-pip     # ya da sudo gerektirmeyen yol:
-curl -LsSf https://astral.sh/uv/install.sh | sh
-~/.local/bin/uv venv .venv && ~/.local/bin/uv pip install --python .venv/bin/python -r requirements.txt
-```
+- **Search is synchronous and slow** (~85s), held open for the whole HTTP
+  request. Production would need a queue plus job-status polling.
+- **PDF text extraction is local**, so heavily designed or two-column PDFs can
+  come out in the wrong reading order. Scanned PDFs fail with a clear error —
+  upload DOCX/TXT.
+- **Single user.** SQLite, no auth. Multi-user would need Postgres + auth;
+  `agent/app/store.py` was written with that migration in mind.
+- **Salary filtering is not applied.** `min_salary` is collected but most
+  postings do not expose salary as structured data.
+- **`claude_cli` does not work in Docker** — there is no Claude Code session
+  inside the container. Use the `anthropic` or `openai` provider there.
 
-Web arayüzü **3001** portunda çalışır (3000 çoğu makinede başka bir şeyle dolu).
-Farklı port kullanacaksan `agent/.env` içindeki `CORS_ORIGINS` değerine o adresi
-eklemeyi unutma. `stop.sh` yalnızca `start.sh`'ın başlattığı süreç gruplarını
-durdurur, makinedeki başka Next.js/uvicorn uygulamalarına dokunmaz.
-
----
-
-## Kullanım
-
-`./start.sh` sonrası tarayıcıda **http://localhost:3001**. Başlığın altında hangi
-sağlayıcı ve modelin aktif olduğu yazar: nokta yeşilse hazır, sarıysa neyin eksik
-olduğunu (CLI, anahtar, model adı) orada söyler.
-
-### 1. CV yükle
-
-PDF, DOCX veya TXT — en fazla 25 MB, sürükle-bırak çalışır.
-
-Metin yerelde çıkarılıyor (pypdf / python-docx), sonra modele gidip yapılandırılmış
-profile dönüşüyor: hedef unvanlar, yetkinlikler, deneyim yılı, seviye, diller,
-eğitim. **10-25 saniye** sürer, sonucu ekranda görürsün. Seviye ya da unvanlar
-alakasız çıktıysa PDF'in okunma sırası bozulmuş olabilir (ağır tasarımlı/iki
-kolonlu dosyalarda olur) — aynı CV'yi DOCX olarak yükle.
-
-Profil tarayıcıda saklanıyor: sayfayı yenileyince CV'yi tekrar yüklemen gerekmez.
-Başka bir CV denemek için profil kartındaki **"Farklı CV yükle"** düğmesini kullan.
-
-### 2. Kriterleri belirle
-
-| Alan | Not |
-|---|---|
-| **Ülkeler / Şehirler** | Virgülle ayır (`Türkiye, Germany`). Boş bırakırsan coğrafi filtre uygulanmaz. |
-| **Çalışma şekli** | Uzaktan / Hibrit / Ofisten. "Uzaktan"da ilanın **kendi** coğrafi kısıtı da kontrol edilir — "Remote — US only" ilanı Türkiye'deki adaya gösterilmez. |
-| **Seviye** | Seçilmezse tüm seviyeler. |
-| **Hariç tutulacak kelimeler** | İlan **başlığında** geçerse elenir (`sales, unpaid, commission`). |
-| **Hariç tutulacak şirketler** | Eski işveren, görmek istemediğin şirketler. |
-| **İlan yaşı (gün)** | Varsayılan 45. |
-| **Sonuç sayısı** | Varsayılan 40. |
-
-### 3. Ara ve sonuçları oku
-
-Arama **30-90 saniye** sürüyor ve HTTP isteği boyunca açık kalıyor — sekmeyi
-kapatma. Bu sürede sırasıyla: arama planı üretilir, kaynaklar paralel taranır,
-kural katmanı eleme yapar, kalan ilanlar modele skorlatılır.
-
-Sonuç başlığındaki dört sayı akışı gösterir: **çekilen → tekilleştirme sonrası →
-ön elemeyi geçen → yapay zekâ skorlaması**. Aradaki büyük düşüş normaldir; kural
-katmanı belirgin uyumsuzları eliyor.
-
-Her kartta skor (0-100), karar etiketi (`strong` / `good` / `stretch` / `poor`),
-eşleşen ve eksik görünen yetkinlikler, skorun Türkçe gerekçesi ve varsa
-başvuru öncesi riskler var. İki uyarı çıkabilir:
-
-- **"Kriterlerinize uyan ilan havuzu dar"** — filtreyi çok az ilan geçti,
-  kriterleri gevşetmeyi ya da ilan yaşını artırmayı dene.
-- **"Kriterlerinize uyan ilan bulunamadı"** — hiç kalmadığı için filtreler
-  otomatik gevşetildi; gördüğün sonuçlar kriterlerinin dışında olabilir.
-
-### 4. İlana özel CV ve ön yazı üret
-
-Beğendiğin ilanın kartındaki **"İlana özel CV hazırla"** düğmesi o ilana özel bir
-kit üretir (**20-40 saniye**): uyarlanmış CV (**PDF** ve **DOCX** indirilebilir),
-ilanın dilinde ön yazı, "Neden ben?" cevabı, vurgulanacak maddeler ve şeffaflık
-bölümü. Metin alanlarının yanındaki **Kopyala** düğmesiyle doğrudan başvuru
-formuna yapıştırabilirsin.
-
-Model profilindeki gerçekleri yalnızca yeniden çerçeveler; olmayan bir deneyimi
-CV'ye yazmaz, "mülakatta sorulabilir" başlığı altında listeler
-([Uydurma yok](#uydurma-yok--tasarımın-merkezindeki-kısıt) bölümüne bak).
-
-### 5. Başvur
-
-Kart üzerindeki bağlantı seni ilanın kendi sayfasına götürür — başvuru her zaman
-ilan sahibinin sistemi üzerinden yapılır, uygulama senin adına form doldurmaz
-([neden](#otomatik-başvuru-neden-yok)).
-
-Bitince `./stop.sh`.
-
-### Bir aramanın maliyeti
-
-Bir arama ≈ **6 model çağrısı** (1 plan + 4 skorlama partisi + kit için 1;
-CV analizi ayrıca 1). `claude_cli` sağlayıcısında bu üyelik kullanım limitine
-sayılır, token ücreti yoktur. Ücretli bir sağlayıcıdaysan en büyük kalem
-skorlamadır: `LLM_SCORE_LIMIT` değerini düşürmek (ör. 32 → 16) doğrudan yarıya
-indirir, karşılığında daha az ilan değerlendirilir.
-
-### Sık karşılaşılanlar
-
-| Belirti | Ne yapmalı |
-|---|---|
-| Başlıkta sarı nokta / sarı uyarı kutusu | Sağlayıcı hazır değil. `cd agent && ./.venv/bin/python scripts/check_llm.py` net hatayı verir. |
-| `Model çıktısı şemaya uymadı` | Model şemayı tutturamıyor — genelde küçük yerel modellerde. Daha büyük bir model dene ya da `LLM_JSON_MODE=object` (bazı sunucularda `prompt`). |
-| `Yanıt LLM_MAX_TOKENS sınırında kesildi` | `LLM_MAX_TOKENS` değerini artır ya da `SCORE_BATCH_SIZE`'ı küçült. |
-| Hız/kota sınırı (429) | `MAX_CONCURRENCY` değerini düşür. |
-| Sonuçlarda Türkiye ilanı yok | Anahtarsız kaynakların hiçbiri Türkiye yerel ilanı taşımıyor; `JOOBLE_HOST=https://tr.jooble.org` + o bölgeden alınmış `JOOBLE_API_KEY` gerekir. |
-| "Agent servisine ulaşılamadı" | `tail -30 /tmp/jobagent-agent.log` — servis çökmüş olabilir. |
-| 3001 portu dolu | Web'i başka portta çalıştırıp `agent/.env` içindeki `CORS_ORIGINS` değerine o adresi ekle. |
-
----
-
-## Doğrulama scriptleri
-
-```bash
-cd agent
-./.venv/bin/python scripts/test_prefilter.py   # kural katmanı birim testleri (LLM'siz, saniyeler)
-./.venv/bin/python scripts/smoke_sources.py    # kaynaklar canlı mı (LLM'siz)
-./.venv/bin/python scripts/smoke_pipeline.py   # tüm pipeline (LLM taklit edilir)
-./.venv/bin/python scripts/check_llm.py        # model erişimi (1 gerçek çağrı)
-```
-
-Bir kaynağın API'si değiştiğinde ilk bakılacak yer `smoke_sources.py`.
-Eşleştirme mantığını değiştirdiysen `test_prefilter.py` — oradaki hatalar
-ilanları elemez, sadece yanlış sıralar ve fark etmesi zordur.
-
----
-
-## Yapılandırma
-
-`agent/.env` içindeki başlıca ayarlar:
-
-| Değişken | Varsayılan | Ne işe yarar |
-|---|---|---|
-| `LLM_PROVIDER` | `claude_cli` | `claude_cli` / `anthropic` / `openai` |
-| `LLM_MODEL` | sağlayıcıya göre | Model adı; `openai` sağlayıcısında zorunlu |
-| `LLM_API_KEY` | — | Anahtar; `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` de okunur |
-| `LLM_BASE_URL` | — | OpenAI-uyumlu uç adresi (çoğunda sonu `/v1`) |
-| `LLM_TIMEOUT` | `300` | Tek model çağrısının saniye sınırı |
-| `LLM_MAX_TOKENS` | `16000` | Tek yanıtın token tavanı ("kesildi" hatasında artır) |
-| `LLM_JSON_MODE` | `auto` | Şema zorlama kipi (yalnızca `openai`): `auto`/`schema`/`object`/`prompt` |
-| `LLM_SCORE_LIMIT` | `32` | Kaç ilan LLM'e gider (ücretli sağlayıcıda ana maliyet kalemi) |
-| `SCORE_BATCH_SIZE` | `8` | Tek çağrıda kaç ilan skorlanır |
-| `MAX_CONCURRENCY` | `4` | Kaç parti aynı anda çalışır |
-| `JOOBLE_HOST` | `https://jooble.org` | Anahtarın alındığı bölge; TR için `https://tr.jooble.org` |
-| `ADZUNA_APP_ID/KEY`, `JOOBLE_API_KEY` | — | Boşsa o kaynak sessizce kapanır |
-
-Üçlü (`32 / 8 / 4`) tek dalgada bitecek şekilde seçildi. Parti boyutunu
-büyütmek çağrı sayısını azaltır ama her çağrıyı uzatır — süre üretilen token
-sayısıyla orantılı olduğu için duvar saati kötüleşir.
-
-### Takip edilecek şirketler
-
-`agent/app/sources/companies.json` içine hedef şirketlerinin ATS pano kimliğini ekle.
-Kimliği ilan URL'sinden çıkarabilirsin:
+### Layout
 
 ```
-boards.greenhouse.io/<token>        jobs.lever.co/<company>
-jobs.ashbyhq.com/<board>            <account>.workable.com
-```
-
-Çalışmayan bir kimlik sessizce atlanır, arama etkilenmez. **Dosyadaki liste
-örnek amaçlı ve ABD merkezli** — kendi hedef şirketlerinle değiştir.
-
----
-
-## Bilinen sınırlar
-
-- **Türkiye ilanları Jooble anahtarına bağlı.** Anahtarsız kaynakların hiçbiri
-  Türkiye yerel iş ilanlarını taşımıyor. Ölçüm — "Türkiye + Ankara/İstanbul"
-  kriteriyle: anahtarsız 320 ilan çekiliyor ve Türkiye merkezli ilan **sıfır**;
-  Jooble TR anahtarıyla 368 ilan ve sonuçların yarısı İstanbul/Ankara merkezli.
-  **Jooble anahtarları bölgeseldir** — `jooble.org` anahtarı ABD indeksini
-  sorgular ("Turkey" araması Kuzey Karolina'daki Turkey kasabasını getirir).
-  Anahtarı `tr.jooble.org/api/about` üzerinden alıp `JOOBLE_HOST` değerini o
-  adrese çevir. Varsayılan kota 500 istek; arama başına şehir sayısı kadar
-  istek gider.
-- **Arama senkron ve yavaş.** ~85 saniye sürüyor ve HTTP isteği boyunca açık
-  kalıyor. Üretimde kuyruk + iş durumu sorgulama gerekir.
-- **PDF metin çıkarımı yerel.** Modele `document` bloğu göndermek yerine
-  (sağlayıcıların hepsi desteklemiyor) PDF'i pypdf ile metne çeviriyoruz. Tek kolonlu CV'lerde
-  sorun yok; ağır tasarımlı/iki kolonlu PDF'lerde okuma sırası bozulabilir.
-  Taranmış PDF'te açık hata veriyoruz — DOCX/TXT yükle.
-- **Tek kullanıcı.** SQLite, kimlik doğrulama yok. Çok kullanıcı için
-  Postgres + auth gerekir; `agent/app/store.py` bu geçiş düşünülerek yazıldı.
-- **Maaş filtresi uygulanmıyor.** `min_salary` alınıyor ama ilanların çoğu
-  maaşı yapılandırılmış vermediği için filtreye dönüştürülmedi; LLM ilan
-  metninde görürse değerlendirmesine katıyor.
-
----
-
-## Başvuru kiti (ilana özel CV)
-
-Her sonucun altındaki **"İlana özel CV hazırla"** butonu, o ilana özel bir kit üretir:
-
-- **Uyarlanmış CV** — PDF ve DOCX olarak indirilebilir
-- **Ön yazı** — kopyalanabilir, ilanın dilinde
-- **"Neden ben?" cevabı** ve **vurgulanacak maddeler**
-- **Şeffaflık bölümü** — neyin öne çıkarıldığı, neyin geri plana atıldığı
-- **"Mülakatta sorulabilir"** — ilanın istediği ama profilde olmayan şeyler
-
-### Uydurma yok — tasarımın merkezindeki kısıt
-
-Model yalnızca profildeki gerçekleri ilanın diline **yeniden çerçeveler**.
-Olmayan bir teknoloji, deneyim, şirket veya rakam eklemez. İlan bir şey istiyor
-ve adayda yoksa CV'ye yazılmaz; `gaps_to_expect` alanına yazılır ve arayüzde
-sarı kutuda gösterilir.
-
-Gerçek bir çıktıdan örnek: ilan GitHub Actions istiyordu, adayda genel CI/CD
-deneyimi vardı. Kit CI/CD'yi "GitHub Actions gereksinimine en yakın eşleşme"
-olarak öne çıkardı, ama GitHub Actions deneyimi olduğunu **iddia etmedi** —
-onu eksikler listesine koydu.
-
-Gerekçe basit: yalan beyanla alınan mülakat teknik soruda çöker ve gönderilen
-bir başvuru geri alınamaz.
-
-### Dil
-
-Kit ilanın dilinde üretilir. CV bölüm başlıkları da ona göre değişir
-(ÖZET/DENEYİM ya da SUMMARY/EXPERIENCE) — İngilizce bir CV'de Türkçe başlık
-belgeyi bozuk gösterir.
-
-### Otomatik başvuru neden yok
-
-Otomatik form doldurma yalnızca şirketlerin kendi ATS panolarında
-(Greenhouse/Lever/Ashby/Workable) güvenilir çalışır. Aracı sitelerden
-(Jooble, Jobicy) gelen ilanlar tıklama takipli yönlendirmelerle rastgele
-işveren sitelerine çıkıyor; bunlar programatik olarak çözülemiyor — HEAD
-isteği bile 403 alıyor.
-
-Bu yüzden akış "kit hazırla → ilana git → yapıştır ve gönder" şeklinde.
-`companies.json` içine ATS panosu olan şirketler eklenirse ileride o ilanlar
-için form doldurma eklenebilir.
-
-## Dizin yapısı
-
-```
-agent/                     Python FastAPI agent servisi
+agent/                     Python FastAPI agent service
   app/
-    cv/                    CV → metin → CandidateProfile
-    search/                planner (LLM) + prefilter (kural, kaynak kotası, coğrafi ceza)
-    match/                 LLM skorlama, paralel partiler
-    tailor/                ilana özel CV üretimi + PDF/DOCX render
-    sources/               ilan kaynakları + companies.json
-    providers/             model sağlayıcıları (claude_cli / anthropic / openai)
-    pipeline.py            uçtan uca akış
-    llm.py                 sağlayıcı seçimi + şema doğrulama (tek giriş noktası)
-    text.py                normalizasyon + kelime sınırı eşleştirme
-    store.py               SQLite
-    schemas.py             tüm veri tipleri (API sözleşmesi dahil)
-  scripts/                 doğrulama scriptleri
-web/                       Next.js arayüz
-  app/page.tsx             3 adımlı akış
-  components/              yükleyici, kriter formu, sonuç kartları
-  lib/types.ts             schemas.py'nin TS karşılığı
-start.sh / stop.sh         iki servisi birlikte başlat/durdur
+    cv/                    CV → text → CandidateProfile
+    search/                planner (LLM) + prefilter (rules, quota, geo penalty)
+    match/                 LLM scoring in parallel batches
+    tailor/                per-posting CV generation + PDF/DOCX rendering
+    sources/               job sources + companies.json
+    providers/             model providers (claude_cli / anthropic / openai)
+    llm.py                 provider selection + schema validation (single entry point)
+    pipeline.py            end-to-end flow
+    schemas.py             every data type (including the API contract)
+  scripts/                 verification scripts
+web/                       Next.js UI (3 step flow)
+start.sh / stop.sh         start/stop both services
 ```
 
-`agent/app/schemas.py` değiştiğinde `web/lib/types.ts` de güncellenmeli — ikisi
-elle senkron tutuluyor.
+`web/lib/types.ts` mirrors `agent/app/schemas.py` — they are kept in sync by hand.

@@ -2,7 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   env: {
-    // Agent servisinin adresi; docker-compose'da servis adıyla override edilir
+    // Address of the agent service; override with the service name under docker-compose
     NEXT_PUBLIC_AGENT_URL: process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:8000",
   },
 };

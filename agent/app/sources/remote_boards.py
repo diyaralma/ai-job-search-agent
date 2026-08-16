@@ -1,13 +1,13 @@
-"""Anahtar gerektirmeyen açık iş panoları.
+"""Open job boards that need no API key.
 
-Remotive, Arbeitnow, RemoteOK, Jobicy, Himalayas — hepsi ücretsiz ve herkese
-açık; MVP'nin varsayılan kaynakları bunlar. Remotive ve Jobicy sunucu tarafında
-arama destekliyor, diğerlerinde filtreleme istemci tarafında yapılıyor.
+Remotive, Arbeitnow, RemoteOK, Jobicy, Himalayas — all free and public; these are
+the MVP's default sources. Remotive and Jobicy support server-side search; for
+the others filtering happens client-side.
 
-Jobicy ve Himalayas ayrıca **coğrafi kısıtı yapılandırılmış** veriyor
-(`jobGeo` / `locationRestrictions`). Bunu `location` alanına taşıyoruz ki
-prefilter'daki `remote_restriction()` mantığı tahmin yürütmeden çalışsın:
-"Remote — United States" ilanı Türkiye'deki adaya gösterilmesin.
+Jobicy and Himalayas additionally expose the **geo restriction as structured
+data** (`jobGeo` / `locationRestrictions`). We move it into the `location` field
+so `remote_restriction()` in the prefilter works from data rather than guesswork:
+a "Remote — United States" posting is not shown to a candidate in Turkey.
 """
 
 from __future__ import annotations
@@ -26,8 +26,8 @@ class RemotiveSource(JobSource):
     async def fetch(self, client, plan, criteria, limit) -> list[JobPosting]:
         out: list[JobPosting] = []
         seen: set[str] = set()
-        # Remotive'in arama motoru dar eşleşiyor: tek sorgu az sonuç veriyor,
-        # bu yüzden planın sorgularının çoğunu ayrı ayrı deniyoruz.
+        # Remotive's search matches narrowly: a single query returns very little,
+        # so we try most of the plan's queries separately.
         queries = (plan.queries or [""])[:6]
         per_query = max(25, limit // max(1, len(queries)))
 
@@ -66,14 +66,14 @@ class RemotiveSource(JobSource):
 
 
 class ArbeitnowSource(JobSource):
-    """Ağırlıklı olarak Avrupa (özellikle Almanya) ilanları."""
+    """Mostly European (especially German) postings."""
 
     name = "arbeitnow"
     URL = "https://www.arbeitnow.com/api/job-board-api"
 
     async def fetch(self, client, plan, criteria, limit) -> list[JobPosting]:
-        # Arbeitnow'da sunucu tarafı arama yok: tüm panoyu sayfalayıp istemcide
-        # filtreliyoruz. Az sayfa çekmek alakalı ilanları tamamen kaçırdırıyor.
+        # Arbeitnow has no server-side search: we page through the whole board and
+        # filter client-side. Fetching too few pages misses relevant postings.
         terms = list({*plan.queries, *plan.titles, *plan.must_have_skills})
         out: list[JobPosting] = []
 
@@ -130,7 +130,7 @@ class RemoteOKSource(JobSource):
         terms = list({*plan.queries, *plan.titles, *plan.must_have_skills})
         out: list[JobPosting] = []
         for item in payload:
-            # İlk eleman yasal uyarı nesnesi; ilan alanları yoksa atla
+            # The first element is a legal notice object; skip it if it has no posting fields
             if not isinstance(item, dict) or not item.get("position"):
                 continue
             title = (item.get("position") or "").strip()
@@ -167,12 +167,12 @@ class RemoteOKSource(JobSource):
 
 
 class JobicySource(JobSource):
-    """Uzaktan çalışma ilanları; `jobGeo` alanı coğrafi kısıtı veriyor."""
+    """Remote postings; the `jobGeo` field carries the geo restriction."""
 
     name = "jobicy"
     URL = "https://jobicy.com/api/v2/remote-jobs"
 
-    #: jobGeo'da kısıt olmadığını belirten değerler
+    #: jobGeo values that mean "no restriction"
     _OPEN_GEO = {"", "anywhere", "worldwide", "global"}
 
     async def fetch(self, client, plan, criteria, limit) -> list[JobPosting]:
@@ -192,7 +192,7 @@ class JobicySource(JobSource):
                 seen.add(ext)
 
                 geo = (item.get("jobGeo") or "").strip()
-                # Kısıtı location'a taşı: aşağı akıştaki coğrafya filtresi
+                # Move the restriction into location so the downstream geo filter
                 # bu metni okuyor.
                 location = "Worldwide" if geo.lower() in self._OPEN_GEO else f"Remote - {geo}"
 
@@ -222,7 +222,7 @@ class JobicySource(JobSource):
 
 
 class HimalayasSource(JobSource):
-    """Uzaktan çalışma ilanları; `locationRestrictions` ülke listesi veriyor."""
+    """Remote postings; `locationRestrictions` gives a list of countries."""
 
     name = "himalayas"
     URL = "https://himalayas.app/jobs/api"
@@ -233,7 +233,7 @@ class HimalayasSource(JobSource):
         out: list[JobPosting] = []
         seen: set[str] = set()
 
-        # Sunucu tarafı arama yok: sayfalayıp istemcide filtreliyoruz.
+        # No server-side search: page through and filter client-side.
         for offset in range(0, 8 * self.PAGE_SIZE, self.PAGE_SIZE):
             resp = await client.get(
                 self.URL,

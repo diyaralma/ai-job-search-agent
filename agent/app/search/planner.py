@@ -1,4 +1,4 @@
-"""Aday profili + kullanıcı kriterleri -> arama planı."""
+"""Candidate profile + user criteria -> search plan."""
 
 from __future__ import annotations
 
@@ -7,31 +7,34 @@ import json
 from ..llm import structured
 from ..schemas import CandidateProfile, SearchCriteria, SearchPlan
 
-SYSTEM = """Sen bir iş arama stratejistisin. Elinde bir aday profili ve adayın
-kriterleri var. Görevin, iş ilanı API'lerine gönderilecek bir arama planı üretmek.
+SYSTEM = """You are a job search strategist. You are given a candidate profile and
+the candidate's criteria. Your task is to produce a search plan that will be sent
+to job board APIs.
 
-Bu planı ilan siteleri kullanacak, dolayısıyla:
-- Sorgular KISA ve GENEL olmalı (1-3 kelime). "senior python backend developer with
-  kubernetes experience" değil, "python backend" ve "django" gibi.
-- Sorguları çeşitlendir: bir unvan üzerinden, bir çekirdek teknoloji üzerinden,
-  bir de alan/domain üzerinden ara. Hepsi aynı şeyi aramasın.
-- Sorgular İngilizce olmalı; ilan havuzlarının çoğu İngilizce.
-- must_have_skills'e adayın gerçekten sahip olduğu ve pozisyonun çekirdeği olan
-  yetkinlikleri koy. Adayda olmayan bir şeyi zorunlu yapma.
-- exclude_terms'e adayın seviyesinin çok üstü/altı veya alakasız alan terimlerini
-  koy (ör. junior bir aday için "principal", "director"; backend'ci için "sales").
-- locations'a kriterlerdeki şehir/ülkeleri yaz; uzaktan çalışma açıksa "remote" ekle.
+Job boards will run these queries, so:
+- Queries must be SHORT and GENERAL (1-3 words). Not "senior python backend
+  developer with kubernetes experience" but "python backend" and "django".
+- Vary the queries: one by job title, one by core technology, one by domain.
+  They should not all search for the same thing.
+- Write queries in English; most job pools are English.
+- Put skills the candidate actually has AND that are core to the role in
+  must_have_skills. Never require something the candidate does not have.
+- Put terms far above/below the candidate's level, or from unrelated fields, in
+  exclude_terms (e.g. "principal", "director" for a junior candidate; "sales"
+  for a backend engineer).
+- Put the cities/countries from the criteria in locations; add "remote" if
+  remote work is enabled.
 
-Yalnızca istenen JSON'u üret, başka açıklama yazma."""
+Produce only the requested JSON, no other commentary."""
 
 
 async def build_plan(profile: CandidateProfile, criteria: SearchCriteria) -> SearchPlan:
     payload = {
-        "aday_profili": profile.model_dump(),
-        "kriterler": criteria.model_dump(),
+        "candidate_profile": profile.model_dump(),
+        "criteria": criteria.model_dump(),
     }
     prompt = (
-        "Aşağıdaki profil ve kriterlere göre arama planını üret.\n\n"
+        "Produce the search plan for the profile and criteria below.\n\n"
         + json.dumps(payload, ensure_ascii=False, indent=2, default=str)
     )
     return await structured(schema=SearchPlan, system=SYSTEM, prompt=prompt)

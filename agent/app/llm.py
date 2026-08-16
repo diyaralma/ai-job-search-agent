@@ -1,20 +1,21 @@
-"""Yapılandırılmış model çağrıları — sağlayıcıdan bağımsız tek giriş noktası.
+"""Structured model calls — one provider-agnostic entry point.
 
-Hangi modelin kullanılacağı `agent/.env` içindeki `LLM_PROVIDER` ile seçilir:
+Which model gets used is chosen with `LLM_PROVIDER` in `agent/.env`:
 
-    claude_cli  Claude Code CLI (`claude -p`). API anahtarı yok; yereldeki
-                Claude Pro/Max üyelik oturumunu kullanır. Varsayılan.
-    anthropic   Anthropic API. ANTHROPIC_API_KEY gerekir.
-    openai      OpenAI ve OpenAI-uyumlu her uç: OpenRouter, Groq, Together,
-                DeepSeek, Google'ın OpenAI uçu, Ollama, LM Studio, vLLM…
-                LLM_BASE_URL + LLM_MODEL ile ayarlanır.
+    claude_cli  Claude Code CLI (`claude -p`). No API key; uses the local
+                Claude Pro/Max subscription session. Default.
+    anthropic   Anthropic API. Requires ANTHROPIC_API_KEY.
+    openai      OpenAI and any OpenAI-compatible endpoint: OpenRouter, Groq,
+                Together, DeepSeek, Google's OpenAI endpoint, Ollama, LM Studio,
+                vLLM… Configured with LLM_BASE_URL + LLM_MODEL.
 
-Pipeline sağlayıcıyı bilmez: her adım yalnızca `structured()` çağırır.
+The pipeline knows nothing about providers: every step just calls `structured()`.
 
-Şema garantisi sağlayıcıdan bağımsız: her biri elindeki en güçlü aracı kullanır
-(CLI'da `--json-schema`, Anthropic'te structured outputs, OpenAI-uyumlu uçlarda
-`response_format`), dönen metni **her hâlükârda** burada Pydantic ile
-doğrularız. Zayıf bir yerel model şemayı tutturamazsa hata net olur.
+The schema guarantee is provider-independent. Each provider uses the strongest
+tool it has (`--json-schema` on the CLI, structured outputs on the Anthropic API,
+`response_format` on OpenAI-compatible endpoints) and the returned text is
+**always** validated here with Pydantic. If a weak local model cannot hold the
+schema, the error is explicit instead of silently corrupt data.
 """
 
 from __future__ import annotations
@@ -40,16 +41,16 @@ def _provider(settings: Settings):
         return REGISTRY[settings.llm_provider]
     except KeyError as exc:
         raise LLMError(
-            f"Bilinmeyen LLM_PROVIDER: {settings.llm_provider!r}. "
-            f"Geçerli değerler: {', '.join(REGISTRY)}"
+            f"Unknown LLM_PROVIDER: {settings.llm_provider!r}. "
+            f"Valid values: {', '.join(REGISTRY)}"
         ) from exc
 
 
 def provider_status() -> Status:
-    """Çağrı yapmadan sağlayıcının hazır olup olmadığını söyler.
+    """Reports whether the provider is usable without making a call.
 
-    Arayüz ve start.sh bunu kullanıyor: kullanıcı 30 saniyelik CV analizinin
-    sonunda değil, en başta "anahtar tanımlı değil" uyarısını görsün.
+    Used by the UI and start.sh: the user should see "no API key" upfront, not
+    at the end of a 30-second CV analysis.
     """
     settings = get_settings()
     try:
@@ -59,12 +60,12 @@ def provider_status() -> Status:
 
 
 def describe_provider() -> dict:
-    """Sağlık uç noktasının döndürdüğü özet (sır içermez)."""
+    """Summary returned by the health endpoint (contains no secrets)."""
     settings = get_settings()
     status = provider_status()
     return {
         "provider": settings.llm_provider,
-        "model": settings.active_model or "(tanımsız)",
+        "model": settings.active_model or "(unset)",
         "ready": status.ready,
         "detail": status.detail,
     }
@@ -77,7 +78,7 @@ async def structured(
     prompt: str,
     timeout: float | None = None,
 ) -> T:
-    """Şemaya uyan tek bir yanıt üretir."""
+    """Produces a single response conforming to the schema."""
     settings = get_settings()
     provider = _provider(settings)
 
@@ -93,11 +94,11 @@ async def structured(
         return schema.model_validate_json(extract_json(raw))
     except ValidationError as exc:
         logger.warning(
-            "Şema doğrulaması başarısız (%s/%s): %s",
+            "Schema validation failed (%s/%s): %s",
             settings.llm_provider,
             settings.active_model,
             str(exc)[:300],
         )
         raise LLMError(
-            f"Model çıktısı şemaya uymadı ({settings.active_model}): {str(exc)[:300]}"
+            f"Model output did not match the schema ({settings.active_model}): {str(exc)[:300]}"
         ) from exc

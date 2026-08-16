@@ -1,8 +1,8 @@
-"""Tüm pipeline boyunca dolaşan veri tipleri.
+"""The data types that flow through the whole pipeline.
 
-CandidateProfile, SearchPlan ve ScoredBatch doğrudan Claude'un structured
-output şeması olarak kullanılıyor — bu yüzden alan açıklamaları modelin
-gördüğü talimatın bir parçası. Değiştirirken bunu göz önünde tut.
+CandidateProfile, SearchPlan, ScoredBatch and ApplicationKit are used directly as
+the model's structured-output schema — which means the field descriptions are
+part of the instruction the model sees. Keep that in mind when editing them.
 """
 
 from datetime import datetime
@@ -19,42 +19,42 @@ Verdict = Literal["strong", "good", "stretch", "poor"]
 # CV
 # --------------------------------------------------------------------------
 class Experience(BaseModel):
-    title: str = Field(description="Pozisyon adı")
-    company: str = Field(description="Şirket adı; bilinmiyorsa 'Bilinmiyor'")
-    start: str = Field(description="Başlangıç, YYYY-MM ya da YYYY; bilinmiyorsa boş string")
-    end: str = Field(description="Bitiş, YYYY-MM / YYYY / 'present'; bilinmiyorsa boş string")
-    highlights: list[str] = Field(description="En fazla 4 maddede somut çıktı/başarı")
+    title: str = Field(description="Job title")
+    company: str = Field(description="Company name; 'Unknown' if not stated")
+    start: str = Field(description="Start, YYYY-MM or YYYY; empty string if unknown")
+    end: str = Field(description="End, YYYY-MM / YYYY / 'present'; empty string if unknown")
+    highlights: list[str] = Field(description="Up to 4 bullets with concrete outcomes")
 
 
 class CandidateProfile(BaseModel):
-    """CV'den çıkarılan yapılandırılmış aday profili."""
+    """Structured candidate profile extracted from the CV."""
 
-    full_name: str = Field(description="Adayın tam adı; CV'de yoksa boş string")
-    headline: str = Field(description="Tek cümlelik profesyonel özet, ör. 'Backend developer, 5 yıl Python'")
-    email: str = Field(description="E-posta; yoksa boş string")
-    phone: str = Field(description="Telefon; yoksa boş string")
-    location: str = Field(description="Adayın mevcut şehir/ülkesi; yoksa boş string")
-    years_experience: float = Field(description="Toplam profesyonel deneyim yılı; tahmin et, bilinmiyorsa 0")
-    seniority: Seniority = Field(description="Deneyim ve sorumluluklara göre seviye")
+    full_name: str = Field(description="Candidate's full name; empty string if absent")
+    headline: str = Field(description="One-line professional summary, e.g. 'Backend developer, 5 years of Python'")
+    email: str = Field(description="Email; empty string if absent")
+    phone: str = Field(description="Phone; empty string if absent")
+    location: str = Field(description="Candidate's current city/country; empty string if absent")
+    years_experience: float = Field(description="Total years of professional experience; estimate, 0 if unknown")
+    seniority: Seniority = Field(description="Level, based on experience and responsibilities")
     target_titles: list[str] = Field(
-        description="Bu adayın gerçekçi olarak başvurabileceği 3-8 pozisyon adı, İngilizce"
+        description="3-8 job titles this candidate could realistically apply for, in English"
     )
-    skills: list[str] = Field(description="Teknik yetkinlikler ve teknolojiler, tekil ve normalize")
-    soft_skills: list[str] = Field(description="Aktarılabilir/soft beceriler, en fazla 8")
-    languages: list[str] = Field(description="Konuşulan diller ve seviyeleri, ör. 'İngilizce (C1)'")
-    industries: list[str] = Field(description="Deneyim sahibi olduğu sektörler")
-    education: list[str] = Field(description="Eğitim satırları, ör. 'BSc Bilgisayar Müh. - ODTÜ (2019)'")
-    certifications: list[str] = Field(description="Sertifikalar; yoksa boş liste")
-    experience: list[Experience] = Field(description="İş deneyimleri, en yeniden eskiye")
-    summary: str = Field(description="Adayın 3-5 cümlelik değerlendirme özeti, Türkçe")
+    skills: list[str] = Field(description="Technical skills and technologies, deduplicated and normalized")
+    soft_skills: list[str] = Field(description="Transferable / soft skills, at most 8")
+    languages: list[str] = Field(description="Spoken languages with levels, e.g. 'English (C1)'")
+    industries: list[str] = Field(description="Industries the candidate has worked in")
+    education: list[str] = Field(description="Education entries, e.g. 'BSc Computer Engineering - METU (2019)'")
+    certifications: list[str] = Field(description="Certifications; empty list if none")
+    experience: list[Experience] = Field(description="Work experience, newest first")
+    summary: str = Field(description="3-5 sentence assessment of the candidate, in English")
 
 
 # --------------------------------------------------------------------------
-# Kullanıcı kriterleri + arama planı
+# User criteria + search plan
 # --------------------------------------------------------------------------
 class SearchCriteria(BaseModel):
-    countries: list[str] = Field(default_factory=list, description="Ülke adları, ör. ['Türkiye', 'Germany']")
-    cities: list[str] = Field(default_factory=list, description="Şehirler, ör. ['İstanbul', 'Berlin']")
+    countries: list[str] = Field(default_factory=list, description="Country names, e.g. ['Turkey', 'Germany']")
+    cities: list[str] = Field(default_factory=list, description="Cities, e.g. ['Istanbul', 'Berlin']")
     work_modes: list[WorkMode] = Field(default_factory=lambda: ["remote", "hybrid", "onsite"])
     employment_types: list[str] = Field(default_factory=list, description="full_time, part_time, contract, internship")
     seniority: list[Seniority] = Field(default_factory=list)
@@ -68,21 +68,21 @@ class SearchCriteria(BaseModel):
 
 
 class SearchPlan(BaseModel):
-    """Profil + kriterlerden türetilen, kaynaklara gönderilecek arama planı."""
+    """Search plan derived from the profile + criteria, sent to the sources."""
 
     queries: list[str] = Field(
-        description="İş sitelerine gönderilecek 3-6 arama sorgusu, İngilizce, kısa ve genel tut"
+        description="3-6 search queries to send to job boards, in English, short and general"
     )
-    titles: list[str] = Field(description="Hedeflenen pozisyon adları, İngilizce")
-    must_have_skills: list[str] = Field(description="İlanda aranması beklenen çekirdek yetkinlikler")
-    nice_to_have_skills: list[str] = Field(description="Artı değer sayılacak yetkinlikler")
-    exclude_terms: list[str] = Field(description="İlan başlığında görülürse eleme yapılacak terimler")
-    locations: list[str] = Field(description="Kaynaklara gönderilecek lokasyon filtreleri; remote ise 'remote' ekle")
-    rationale: str = Field(description="Bu planı neden seçtiğinin 2-3 cümlelik Türkçe açıklaması")
+    titles: list[str] = Field(description="Target job titles, in English")
+    must_have_skills: list[str] = Field(description="Core skills expected to appear in the posting")
+    nice_to_have_skills: list[str] = Field(description="Skills that count as a plus")
+    exclude_terms: list[str] = Field(description="Terms that disqualify a posting if seen in its title")
+    locations: list[str] = Field(description="Location filters for the sources; add 'remote' if remote is wanted")
+    rationale: str = Field(description="2-3 sentences in English explaining why you chose this plan")
 
 
 # --------------------------------------------------------------------------
-# İlan
+# Job posting
 # --------------------------------------------------------------------------
 class JobPosting(BaseModel):
     id: str
@@ -98,11 +98,12 @@ class JobPosting(BaseModel):
     salary_text: str = ""
     posted_at: datetime | None = None
     tags: list[str] = Field(default_factory=list)
-    # ATS panolarında başvuru formu doğrudan doldurulabilir; premium akışı buna bakar
+    # On ATS boards the application form can be filled directly; the premium
+    # flow builds on this.
     ats: str = ""
 
     def digest(self, max_chars: int = 2400) -> str:
-        """LLM'e gönderilecek kompakt gösterim."""
+        """Compact representation sent to the LLM."""
         desc = " ".join(self.description.split())
         if len(desc) > max_chars:
             desc = desc[:max_chars] + "…"
@@ -110,7 +111,7 @@ class JobPosting(BaseModel):
             f"id: {self.id}",
             f"title: {self.title}",
             f"company: {self.company}",
-            f"location: {self.location or 'belirtilmemiş'}",
+            f"location: {self.location or 'not specified'}",
             f"work_mode: {self.work_mode}",
         ]
         if self.employment_type:
@@ -124,26 +125,26 @@ class JobPosting(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# Eşleştirme
+# Matching
 # --------------------------------------------------------------------------
 class JobScore(BaseModel):
-    job_id: str = Field(description="Skorlanan ilanın id'si, sana verilen değerle birebir aynı olmalı")
-    score: int = Field(description="0-100 arası uygunluk skoru")
+    job_id: str = Field(description="Id of the scored posting, copied verbatim from the input")
+    score: int = Field(description="Fit score between 0 and 100")
     verdict: Verdict = Field(
-        description="strong=hemen başvur, good=iyi aday, stretch=zorlayıcı ama denenebilir, poor=uyumsuz"
+        description="strong=apply now, good=solid candidate, stretch=hard but worth a try, poor=mismatch"
     )
-    matched_skills: list[str] = Field(description="İlanın aradığı ve adayda olan yetkinlikler")
-    missing_skills: list[str] = Field(description="İlanın aradığı ama adayda görünmeyen yetkinlikler")
-    reasons: list[str] = Field(description="Skoru gerekçelendiren 2-4 madde, Türkçe")
-    risks: list[str] = Field(description="Başvuru öncesi dikkat edilmesi gerekenler, Türkçe; yoksa boş liste")
+    matched_skills: list[str] = Field(description="Skills the posting asks for and the candidate has")
+    missing_skills: list[str] = Field(description="Skills the posting asks for but the candidate lacks")
+    reasons: list[str] = Field(description="2-4 bullets justifying the score, in English")
+    risks: list[str] = Field(description="Things to check before applying, in English; empty list if none")
 
 
 class ScoredBatch(BaseModel):
-    scores: list[JobScore] = Field(description="Sana verilen HER ilan için tam olarak bir skor nesnesi")
+    scores: list[JobScore] = Field(description="Exactly one score object for EVERY posting you were given")
 
 
 class JobMatch(BaseModel):
-    """API'nin döndürdüğü birleşik sonuç."""
+    """The combined result returned by the API."""
 
     job: JobPosting
     score: int
@@ -157,7 +158,7 @@ class JobMatch(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# API sözleşmesi
+# API contract
 # --------------------------------------------------------------------------
 class SearchRequest(BaseModel):
     profile_id: str
@@ -172,9 +173,9 @@ class SearchStats(BaseModel):
     sources_used: list[str] = Field(default_factory=list)
     source_errors: dict[str, str] = Field(default_factory=dict)
     duration_ms: int = 0
-    #: Kriterlere uyan hiç ilan kalmadığı için filtreler gevşetildi.
-    #: Arayüz bunu göstermeli — yoksa kullanıcı Türkiye seçtiği halde neden
-    #: Berlin ilanı gördüğünü anlamıyor.
+    #: Filters were relaxed because nothing matched the criteria. The UI must
+    #: show this — otherwise the user cannot tell why they picked Turkey and
+    #: got a Berlin posting.
     relaxed: bool = False
 
 
@@ -193,53 +194,53 @@ class ProfileResponse(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# Başvuru kiti (ilana özel CV + ön yazı)
+# Application kit (job-specific CV + cover letter)
 # --------------------------------------------------------------------------
 class TailoredExperience(BaseModel):
-    title: str = Field(description="Pozisyon adı, CV'dekiyle aynı — değiştirme")
-    company: str = Field(description="Şirket adı, CV'dekiyle aynı — değiştirme")
-    period: str = Field(description="Dönem, ör. '2022-03 – present'")
+    title: str = Field(description="Job title, same as in the CV — do not change it")
+    company: str = Field(description="Company name, same as in the CV — do not change it")
+    period: str = Field(description="Period, e.g. '2022-03 – present'")
     bullets: list[str] = Field(
-        description="Bu ilana göre yeniden yazılmış 2-4 madde. Sadece CV'deki "
-        "gerçekleri kullan; ilanın önemsediği yönleri öne çıkar."
+        description="2-4 bullets rewritten for this posting. Use only facts from the "
+        "CV; foreground what the posting cares about."
     )
 
 
 class TailoredCV(BaseModel):
-    """İlana göre yeniden çerçevelenmiş CV. Yeni bilgi İÇERMEZ."""
+    """CV reframed for a specific posting. Contains NO new information."""
 
-    full_name: str = Field(description="Adayın adı, profildekiyle aynı")
-    headline: str = Field(description="Bu ilana yönelik tek satırlık başlık")
-    contact: str = Field(description="E-posta · telefon · konum; profilde olmayanı yazma")
-    summary: str = Field(description="Bu ilana yönelik 2-4 cümlelik özet")
+    full_name: str = Field(description="Candidate's name, same as in the profile")
+    headline: str = Field(description="One-line headline aimed at this posting")
+    contact: str = Field(description="Email · phone · location; never invent what the profile lacks")
+    summary: str = Field(description="2-4 sentence summary aimed at this posting")
     skills: list[str] = Field(
-        description="Profildeki yetkinlikler, ilanla ilgili olanlar önce. Yeni yetkinlik ekleme."
+        description="Skills from the profile, the posting-relevant ones first. Do not add new skills."
     )
-    experience: list[TailoredExperience] = Field(description="Deneyimler, en yeniden eskiye")
-    education: list[str] = Field(description="Eğitim satırları, profildekiyle aynı")
-    languages: list[str] = Field(description="Diller, profildekiyle aynı")
+    experience: list[TailoredExperience] = Field(description="Experience, newest first")
+    education: list[str] = Field(description="Education entries, same as in the profile")
+    languages: list[str] = Field(description="Languages, same as in the profile")
 
 
 class ApplicationKit(BaseModel):
-    language: str = Field(description="Kitin dili: ilanın dili ('tr' ya da 'en')")
+    language: str = Field(description="Language of the kit: the posting's language ('tr' or 'en')")
     cv: TailoredCV
     cover_letter: str = Field(
-        description="4-6 paragraflık ön yazı, ilanın dilinde. Somut ve kısa; klişe açılış yok."
+        description="4-6 paragraph cover letter in the posting's language. Concrete and short; no cliché opener."
     )
     talking_points: list[str] = Field(
-        description="Mülakatta/başvuruda vurgulanacak 3-5 madde, ilanın gereksinimlerine bağlı"
+        description="3-5 points to emphasize in the application/interview, tied to the posting's requirements"
     )
     why_me: str = Field(
-        description="'Neden bu pozisyon için uygunsunuz?' sorusuna 3-5 cümlelik cevap, ilanın dilinde"
+        description="3-5 sentence answer to 'why are you a fit for this role?', in the posting's language"
     )
     emphasized: list[str] = Field(
-        description="Bu ilan için ÖNE ÇIKARILAN profil öğeleri — şeffaflık amaçlı"
+        description="Profile items FOREGROUNDED for this posting — for transparency"
     )
     downplayed: list[str] = Field(
-        description="Kısaltılan/geri plana atılan öğeler — şeffaflık amaçlı"
+        description="Items shortened or pushed to the background — for transparency"
     )
     gaps_to_expect: list[str] = Field(
-        description="İlanın istediği ama adayda olmayan şeyler; mülakatta sorulabilir. Uydurma ile kapatma."
+        description="What the posting wants but the candidate lacks; may come up in the interview. Never paper over it."
     )
 
 

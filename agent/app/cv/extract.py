@@ -1,11 +1,10 @@
-"""Yüklenen CV dosyasından düz metin çıkarır.
+"""Extracts plain text from the uploaded CV file.
 
-Not — bilinçli bir ödün: Claude Code CLI'ya PDF'i `document` bloğu olarak
-gönderemiyoruz (o yol yalnızca Messages API'sinde var), bu yüzden metni yerel
-olarak çıkarıyoruz. Tek kolonlu standart CV'lerde sorun yok; ağır tasarımlı,
-iki kolonlu veya tablo yerleşimli PDF'lerde okuma sırası bozulabiliyor.
-Çıkarım anlamlı metin vermezse kullanıcıyı DOCX/TXT'ye yönlendiriyoruz —
-sessizce bozuk metinle devam etmektense açık hata vermek daha iyi.
+A deliberate trade-off: not every provider accepts a PDF as a `document` block,
+so the text is extracted locally instead. Standard single-column CVs are fine;
+heavily designed, two-column or table-based PDFs can come out in the wrong
+reading order. If extraction yields nothing useful we point the user at
+DOCX/TXT — a clear error beats silently working from garbled text.
 """
 
 from __future__ import annotations
@@ -16,7 +15,7 @@ from docx import Document
 from pypdf import PdfReader
 
 MAX_TEXT_CHARS = 200_000
-#: Bunun altındaki çıktı "PDF taranmış görüntü / metin katmanı yok" demek
+#: Below this, the PDF is a scanned image with no text layer
 MIN_USEFUL_CHARS = 120
 
 SUPPORTED_SUFFIXES = {".pdf", ".docx", ".txt", ".md"}
@@ -47,28 +46,28 @@ def _pdf_to_text(data: bytes) -> str:
     for page in reader.pages:
         try:
             pages.append(page.extract_text() or "")
-        except Exception:  # noqa: BLE001 - tek bozuk sayfa tüm CV'yi düşürmesin
+        except Exception:  # noqa: BLE001 - one broken page must not fail the whole CV
             continue
     return "\n".join(pages)
 
 
 def to_text(filename: str, data: bytes) -> str:
-    """CV dosyasını modele verilecek düz metne çevirir."""
+    """Converts the CV file into plain text for the model."""
     suffix = _suffix(filename)
     if suffix not in SUPPORTED_SUFFIXES:
         raise UnsupportedCV(
-            f"Desteklenmeyen dosya türü: {suffix or 'uzantısız'}. "
-            f"Desteklenenler: {', '.join(sorted(SUPPORTED_SUFFIXES))}"
+            f"Unsupported file type: {suffix or 'no extension'}. "
+            f"Supported: {', '.join(sorted(SUPPORTED_SUFFIXES))}"
         )
     if not data:
-        raise UnsupportedCV("Dosya boş.")
+        raise UnsupportedCV("The file is empty.")
 
     if suffix == ".pdf":
         text = _pdf_to_text(data)
         if len(text.strip()) < MIN_USEFUL_CHARS:
             raise UnsupportedCV(
-                "PDF'den metin çıkarılamadı — dosya taranmış görüntü olabilir. "
-                "CV'yi DOCX veya TXT olarak yükleyin."
+                "Could not extract text from the PDF — it may be a scanned image. "
+                "Upload the CV as DOCX or TXT instead."
             )
     elif suffix == ".docx":
         text = _docx_to_text(data)
@@ -76,5 +75,5 @@ def to_text(filename: str, data: bytes) -> str:
         text = data.decode("utf-8", errors="replace")
 
     if len(text.strip()) < MIN_USEFUL_CHARS:
-        raise UnsupportedCV("Dosyadan okunabilir metin çıkarılamadı.")
+        raise UnsupportedCV("No readable text could be extracted from the file.")
     return text[:MAX_TEXT_CHARS]

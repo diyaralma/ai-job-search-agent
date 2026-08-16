@@ -1,13 +1,13 @@
-"""Şirketlerin kendi ATS iş panoları: Greenhouse, Lever, Ashby, Workable.
+"""Employers' own ATS job boards: Greenhouse, Lever, Ashby, Workable.
 
-Bu kaynak iki nedenle önemli:
-1. İlan doğrudan işverenden geliyor — aracı yok, ilan taze ve link kalıcı.
-2. Başvuru formu bu panolarda açık ve makine tarafından doldurulabilir;
-   premium "onaylı otomatik başvuru" akışı yalnızca bu ilanlar üzerinde
-   çalışacak (bkz. README, Faz 2).
+This source matters for two reasons:
+1. The posting comes straight from the employer — no middleman, it is fresh and
+   the link is stable.
+2. The application form on these boards is open and machine-fillable; a future
+   "approved auto-apply" flow would only work on these postings.
 
-Takip edilecek şirketler `companies.json` içinde. Bir şirket panosu 404
-dönerse o şirket atlanır, diğerleri etkilenmez.
+The companies to track live in `companies.json`. If a company board returns 404
+that company is skipped and the others are unaffected.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 COMPANIES_FILE = Path(__file__).with_name("companies.json")
 
-#: Tarihi olmayan ilanları sıralamada en sona atmak için
+#: Used to push postings without a date to the end of the ordering
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
@@ -38,7 +38,7 @@ def load_companies() -> dict[str, list[str]]:
     try:
         data = json.loads(COMPANIES_FILE.read_text(encoding="utf-8"))
     except json.JSONDecodeError:
-        logger.warning("companies.json okunamadı, ATS kaynağı boş dönecek")
+        logger.warning("Could not read companies.json, the ATS source will return nothing")
         return {}
     return {k: [s for s in v if s] for k, v in data.items() if isinstance(v, list)}
 
@@ -73,7 +73,7 @@ class ATSSource(JobSource):
         out: list[JobPosting] = []
         for result in results:
             if isinstance(result, BaseException):
-                logger.debug("ATS panosu atlandı: %s", result)
+                logger.debug("ATS board skipped: %s", result)
                 continue
             for job in result:
                 if _relevant(job, terms):

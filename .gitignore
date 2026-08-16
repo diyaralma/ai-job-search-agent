@@ -4,12 +4,12 @@ __pycache__/
 .venv/
 *.egg-info/
 
-# Ortam / sırlar
+# Environment / secrets
 .env
 .env.local
 .env.*.local
 
-# Veri
+# Data
 agent/data/
 *.db
 *.db-wal
@@ -22,7 +22,7 @@ out/
 next-env.d.ts
 *.tsbuildinfo
 
-# Editör / OS
+# Editor / OS
 .DS_Store
 .idea/
 .vscode/

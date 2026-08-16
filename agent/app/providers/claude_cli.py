@@ -1,15 +1,16 @@
-"""Claude Code CLI köprüsü — API anahtarı gerektirmeyen sağlayıcı.
+"""Claude Code CLI bridge — the provider that needs no API key.
 
-Neden SDK değil de CLI: bu yol Claude Pro/Max **üyeliğiyle** çalışıyor, ayrı bir
-API anahtarı/kredisi yok. `claude -p` yereldeki Claude Code oturumunun kimliğini
-kullanıyor, dolayısıyla ek faturalandırma olmuyor.
+Why the CLI and not the SDK: this path runs on a Claude Pro/Max **subscription**,
+with no separate API key or credit. `claude -p` uses the local Claude Code
+session's identity, so there is no extra billing.
 
-Şema garantisi kayboluyor mu: hayır. `--json-schema` bayrağı çıktıyı verdiğimiz
-JSON Schema'ya zorluyor, dönen metni ayrıca Pydantic ile doğruluyoruz.
+Does that lose the schema guarantee? No. The `--json-schema` flag forces the
+output to the JSON Schema we pass, and the returned text is additionally
+validated with Pydantic.
 
-Maliyet yerine **duvar saati** optimize ediliyor: üyelikte token başına ücret
-yok ama her çağrı ayrı bir subprocess ve ~16k token sabit ek yük taşıyor.
-Bu yüzden partiler küçük tutulup paralel çalıştırılıyor (bkz. match/scorer.py).
+**Wall-clock** is optimized instead of cost: a subscription has no per-token
+charge, but every call is a separate subprocess carrying ~16k tokens of fixed
+overhead. Hence small batches run in parallel (see match/scorer.py).
 """
 
 from __future__ import annotations
@@ -25,8 +26,8 @@ from .base import LLMError, Status
 
 NAME = "claude_cli"
 
-#: Bu bir tamamlama çağrısı, ajan oturumu değil — araçları kapatıyoruz ki
-#: model dosya okumaya/web'de aramaya kalkışmasın ve çıktı deterministik olsun.
+#: This is a completion call, not an agent session — tools are disabled so the
+#: model cannot read files or search the web and the output stays deterministic.
 _DISALLOWED_TOOLS = (
     "Bash,Read,Write,Edit,Glob,Grep,WebSearch,WebFetch,Task,TodoWrite,NotebookEdit"
 )
@@ -37,13 +38,13 @@ def status(settings: Settings) -> Status:
         return Status(
             ready=False,
             detail=(
-                f"'{settings.claude_cli}' komutu bulunamadı. Claude Code kurulu ve "
-                "PATH üzerinde olmalı (kontrol: `claude --version`). Claude Code "
-                "kullanmak istemiyorsan agent/.env içinde LLM_PROVIDER değerini "
-                "'anthropic' ya da 'openai' yap."
+                f"Command '{settings.claude_cli}' not found. Claude Code must be "
+                "installed and on PATH (check: `claude --version`). If you would "
+                "rather not use Claude Code, set LLM_PROVIDER to 'anthropic' or "
+                "'openai' in agent/.env."
             ),
         )
-    return Status(ready=True, detail="Claude Code CLI bulundu (üyelik oturumu kullanılıyor).")
+    return Status(ready=True, detail="Claude Code CLI found (using your subscription session).")
 
 
 async def complete(
@@ -54,8 +55,8 @@ async def complete(
     prompt: str,
     timeout: float,
 ) -> str:
-    """Prompt stdin'den geçiriliyor: ilan partileri onbinlerce karakter olabiliyor
-    ve argüman listesi sınırına takılmak istemiyoruz.
+    """The prompt goes through stdin: posting batches can be tens of thousands of
+    characters and we do not want to hit the argument-list limit.
     """
     cli = shutil.which(settings.claude_cli)
     if cli is None:
@@ -77,8 +78,8 @@ async def complete(
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        # Depoda çalıştırmıyoruz: proje CLAUDE.md'si ve dosyaları çağrıya
-        # sızmasın, çıktı çalışma dizininden bağımsız olsun.
+        # Not run inside the repo: the project's CLAUDE.md and files must not
+        # leak into the call, and output must not depend on the working dir.
         cwd=settings.cli_workdir,
     )
 
@@ -91,22 +92,22 @@ async def complete(
         process.kill()
         await process.wait()
         raise LLMError(
-            f"Model çağrısı {timeout:.0f} saniyede tamamlanmadı."
+            f"The model call did not finish within {timeout:.0f} seconds."
         ) from exc
 
     if process.returncode != 0:
         detail = (stderr or stdout).decode("utf-8", errors="replace").strip()
-        raise LLMError(f"claude çıkış kodu {process.returncode}: {detail[:400]}")
+        raise LLMError(f"claude exited with {process.returncode}: {detail[:400]}")
 
     try:
         envelope = json.loads(stdout.decode("utf-8", errors="replace"))
     except json.JSONDecodeError as exc:
-        raise LLMError(f"claude çıktısı JSON değil: {stdout[:300]!r}") from exc
+        raise LLMError(f"claude output was not JSON: {stdout[:300]!r}") from exc
 
     if envelope.get("is_error"):
-        raise LLMError(f"claude hata döndürdü: {str(envelope.get('result'))[:400]}")
+        raise LLMError(f"claude returned an error: {str(envelope.get('result'))[:400]}")
 
     result = envelope.get("result")
     if not isinstance(result, str) or not result.strip():
-        raise LLMError("claude boş yanıt döndürdü.")
+        raise LLMError("claude returned an empty response.")
     return result

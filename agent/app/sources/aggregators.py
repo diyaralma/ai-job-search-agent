@@ -1,7 +1,7 @@
-"""API anahtarı gerektiren toplayıcılar: Adzuna ve Jooble.
+"""Aggregators that require an API key: Adzuna and Jooble.
 
-Anahtar yoksa kaynak kendini kapatır (`enabled` False) ve pipeline sessizce
-diğer kaynaklarla devam eder — MVP anahtarsız da çalışır.
+Without a key the source disables itself (`enabled` False) and the pipeline
+quietly continues with the others — the MVP works with no keys at all.
 """
 
 from __future__ import annotations
@@ -12,12 +12,13 @@ from ..config import get_settings
 from ..schemas import JobPosting, SearchCriteria, SearchPlan
 from .base import USER_AGENT, JobSource, detect_work_mode, make_id, parse_date, strip_html
 
-# Adzuna ülke kodları (destekledikleri pazarlar). Türkiye listede yok —
-# Türkiye seçiliyse bu kaynak atlanır, Jooble devreye girer.
+# Adzuna country codes (the markets they support). Turkey is not on the list —
+# if Turkey is selected this source is skipped and Jooble takes over.
+# Turkish spellings are kept as lookup keys for user-entered country names.
 ADZUNA_COUNTRIES = {
     "austria": "at", "avusturya": "at",
     "australia": "au", "avustralya": "au",
-    "belgium": "be", "belçika": "be",
+    "belgium": "be", "belçika": "be",  # Turkish spellings are lookup keys
     "brazil": "br", "brezilya": "br",
     "canada": "ca", "kanada": "ca",
     "switzerland": "ch", "isviçre": "ch", "i̇sviçre": "ch",
@@ -111,13 +112,12 @@ class AdzunaSource(JobSource):
 
 
 class JoobleSource(JobSource):
-    """Jooble toplayıcısı.
+    """Jooble aggregator.
 
-    ÖNEMLİ — anahtarlar bölgeseldir. jooble.org üzerinden alınan anahtar ABD
-    indeksini sorgular ve Türkiye şehirlerine boş döner; aynı anahtar
-    tr.jooble.org'da 403 alır (ölçüldü). Türkiye ilanları için anahtarı
-    tr.jooble.org/api/about üzerinden alıp `JOOBLE_HOST` ayarını o adrese
-    çevirmek gerekir.
+    IMPORTANT — keys are regional. A key obtained from jooble.org queries the US
+    index and returns nothing for Turkish cities; the same key gets a 403 on
+    tr.jooble.org (measured). For Turkish postings, get the key from
+    tr.jooble.org/api/about and point `JOOBLE_HOST` at that address.
     """
 
     name = "jooble"
@@ -128,8 +128,8 @@ class JoobleSource(JobSource):
 
     async def fetch(self, client, plan, criteria, limit) -> list[JobPosting]:
         settings = get_settings()
-        # Boş string = lokasyon filtresi yok. "remote" bir lokasyon DEĞİL;
-        # onu location olarak göndermek Jooble'da hep sıfır sonuç veriyordu.
+        # Empty string = no location filter. "remote" is NOT a location; sending
+        # it as one always returned zero results from Jooble.
         locations = criteria.cities or criteria.countries or [""]
 
         keywords = ", ".join(plan.queries[:3]) or ", ".join(plan.titles[:3])

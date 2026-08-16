@@ -5,11 +5,11 @@ import MatchCard from "./MatchCard";
 import type { SearchResponse, Verdict } from "@/lib/types";
 
 const FILTERS: { value: Verdict | "all"; label: string }[] = [
-  { value: "all", label: "Tümü" },
-  { value: "strong", label: "Güçlü" },
-  { value: "good", label: "İyi" },
-  { value: "stretch", label: "Zorlayıcı" },
-  { value: "poor", label: "Uyumsuz" },
+  { value: "all", label: "All" },
+  { value: "strong", label: "Strong" },
+  { value: "good", label: "Good" },
+  { value: "stretch", label: "Stretch" },
+  { value: "poor", label: "Mismatch" },
 ];
 
 export default function MatchList({
@@ -39,58 +39,59 @@ export default function MatchList({
       <div className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-lg font-semibold text-gray-900">
-            {result.matches.length} eşleşme
+            {result.matches.length} matches
           </h2>
           <span className="text-xs text-gray-500">
-            {(result.stats.duration_ms / 1000).toFixed(1)} sn ·{" "}
-            {result.stats.sources_used.join(", ") || "kaynak yok"}
+            {(result.stats.duration_ms / 1000).toFixed(1)}s ·{" "}
+            {result.stats.sources_used.join(", ") || "no sources"}
           </span>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
-          <Stat label="Çekilen ilan" value={result.stats.fetched} />
-          <Stat label="Tekilleştirme sonrası" value={result.stats.after_dedupe} />
-          <Stat label="Ön elemeyi geçen" value={result.stats.after_prefilter} />
-          <Stat label="Yapay zekâ skorlaması" value={result.stats.llm_scored} />
+          <Stat label="Postings fetched" value={result.stats.fetched} />
+          <Stat label="After dedupe" value={result.stats.after_dedupe} />
+          <Stat label="Passed pre-filter" value={result.stats.after_prefilter} />
+          <Stat label="Scored by AI" value={result.stats.llm_scored} />
         </div>
 
         {!result.stats.relaxed && result.stats.after_prefilter < 15 && (
           <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm text-blue-900">
-            <span className="font-medium">Kriterlerinize uyan ilan havuzu dar</span> —
-            filtreyi yalnızca {result.stats.after_prefilter} ilan geçti. Ücretsiz
-            kaynakların hiçbiri Türkiye ilanlarını kapsamıyor; kapsamı genişletmek için{" "}
+            <span className="font-medium">The pool matching your criteria is thin</span> —
+            only {result.stats.after_prefilter} postings passed the filter. None of the
+            free sources cover Turkish job listings; to widen coverage, get a{" "}
             <a
               href="https://jooble.org/api/about"
               target="_blank"
               rel="noopener noreferrer"
               className="underline hover:text-blue-700"
             >
-              ücretsiz Jooble anahtarı
+              free Jooble key
             </a>{" "}
-            alıp <code className="rounded bg-blue-100 px-1">agent/.env</code> içine ekleyin.
+            and add it to <code className="rounded bg-blue-100 px-1">agent/.env</code>.
           </div>
         )}
 
         {result.stats.relaxed && (
           <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
-            <span className="font-medium">Kriterlerinize uyan ilan bulunamadı.</span>{" "}
-            Ekran boş kalmasın diye lokasyon filtresi gevşetildi — aşağıdaki ilanlar
-            seçtiğiniz ülke/şehir dışında olabilir. Kapsamı artırmak için{" "}
-            <code className="rounded bg-amber-100 px-1">JOOBLE_API_KEY</code> tanımlayın
-            (Türkiye ilanları için) ya da uzaktan çalışmayı seçili bırakın.
+            <span className="font-medium">Nothing matched your criteria.</span>{" "}
+            The location filter was relaxed so the screen would not be empty — the
+            postings below may be outside the country/city you picked. To widen
+            coverage, set{" "}
+            <code className="rounded bg-amber-100 px-1">JOOBLE_API_KEY</code> (for
+            Turkish postings) or keep remote work selected.
           </div>
         )}
 
         {result.plan.rationale && (
           <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900">
-            <span className="font-medium">Arama stratejisi: </span>
+            <span className="font-medium">Search strategy: </span>
             {result.plan.rationale}
           </p>
         )}
 
         {result.plan.queries.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
-            <span className="text-xs text-gray-500">Kullanılan sorgular:</span>
+            <span className="text-xs text-gray-500">Queries used:</span>
             {result.plan.queries.map((q) => (
               <span key={q} className="rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-700">
                 {q}
@@ -101,7 +102,7 @@ export default function MatchList({
 
         {errorEntries.length > 0 && (
           <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <span className="font-medium">Ulaşılamayan kaynaklar: </span>
+            <span className="font-medium">Unreachable sources: </span>
             {errorEntries.map(([name, err]) => `${name} (${err})`).join(", ")}
           </div>
         )}
@@ -127,7 +128,7 @@ export default function MatchList({
 
       {visible.length === 0 ? (
         <p className="rounded-xl border border-gray-200 bg-white p-8 text-center text-sm text-gray-600">
-          Bu filtrede sonuç yok.
+          No results for this filter.
         </p>
       ) : (
         <div className="space-y-3">

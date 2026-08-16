@@ -1,11 +1,12 @@
-"""Kural bazlı tekilleştirme, sert filtreler ve ön skorlama.
+"""Rule-based dedupe, hard filters and pre-scoring.
 
-Amaç LLM'i ucuzlatmak: kaynaklardan yüzlerce ilan gelebilir, hepsini modele
-göndermek hem pahalı hem gereksiz. Burada belirgin uyumsuzları eliyor,
-kalanları kabaca sıralayıp en umut verici N tanesini LLM'e bırakıyoruz.
+The point is to make the LLM cheap: sources can return hundreds of postings and
+sending all of them to the model is both expensive and pointless. Here we drop
+the obvious mismatches, roughly rank the rest and hand the most promising N to
+the LLM.
 
-Buradaki skor NİHAİ skor değil — sadece sıraya sokma amaçlı. Nihai karar ve
-gerekçe LLM tarafında üretiliyor.
+The score here is NOT the final score — it only establishes an order. The final
+verdict and its justification come from the LLM.
 """
 
 from __future__ import annotations
@@ -26,43 +27,44 @@ SENIORITY_HINTS = {
 }
 
 
-#: "Remote" ama coğrafyası herkese açık olan ilanlar
+#: "Remote" postings that are genuinely open to any geography
 _GLOBAL_REMOTE = ("anywhere", "worldwide", "global", "any location", "fully remote")
-#: Lokasyon alanında geçen "uzaktan çalışma" sözcükleri. Coğrafi kısıt
-#: hesaplanırken atılıyorlar: "Evden çalışmak" bir yer adı değil, kısıt yok
-#: demek; "Home Office, Berlin" ise Berlin ile sınırlı.
+#: "Remote work" words that appear in the location field (Turkish included, since
+#: Turkish postings are matched too). They are stripped when computing the geo
+#: restriction: "Evden çalışmak" is not a place name so there is no restriction,
+#: while "Home Office, Berlin" is limited to Berlin.
 _REMOTE_WORDS = frozenset(
     {"remote", "uzaktan", "evden", "calismak", "calisma", "home", "office",
      "telecommute", "wfh", "hybrid", "hibrit", "work", "from"}
 )
-#: Ülke değil bölge belirten sözcükler. Bunları çözmeye çalışmıyoruz —
-#: "EMEA" Türkiye'yi kapsar, "Europe" tartışmalı; yanlış eleme yapmaktansa
-#: kısıtı bilinmiyor sayıp kararı LLM'e bırakıyoruz.
+#: Words denoting a region rather than a country. We do not try to resolve them —
+#: "EMEA" includes Turkey, "Europe" is arguable; rather than filter wrongly we
+#: treat the restriction as unknown and leave the call to the LLM.
 _REGION_WORDS = ("emea", "europe", "european", "apac", "latam", "americas", "eu", "cet", "est", "pst")
 
 
 def remote_restriction(job: JobPosting) -> str | None:
-    """Uzaktan ilanın coğrafi kısıtı; kısıt yoksa/çözülemiyorsa None.
+    """Geo restriction of a remote posting; None if absent or unresolvable.
 
-    "Remote — United States" gerçekte her yerden başvurulabilir bir ilan değil,
-    ABD'yle sınırlı. Buradaki tek doğru kaynak hem sert filtre hem sıralama
-    tarafından kullanılıyor ki iki yerde farklı davranış oluşmasın.
+    "Remote — United States" is not actually open to everyone, it is limited to
+    the US. This single source of truth is used by both the hard filter and the
+    ranking so the two cannot drift apart.
     """
     if job.work_mode != "remote":
         return None
     loc = normalize(job.location)
     if not loc or any(term_in(loc, g) for g in _GLOBAL_REMOTE):
-        return None  # "Worldwide"/"Anywhere" — kısıt yok
+        return None  # "Worldwide"/"Anywhere" — no restriction
     rest = " ".join(w for w in loc.split() if w not in _REMOTE_WORDS).strip()
     if not rest:
-        return None  # sadece "Remote"/"Evden çalışmak" — kısıt belirtilmemiş
+        return None  # just "Remote"/"Evden çalışmak" — no restriction stated
     if any(term_in(rest, r) for r in _REGION_WORDS):
-        return None  # bölge adı — güvenilir şekilde çözemiyoruz, elemiyoruz
+        return None  # region name — cannot resolve reliably, so do not filter
     return rest
 
 
 def remote_scope_allows(job: JobPosting, places: list[str]) -> bool:
-    """Uzaktan ilan, verilen coğrafyalardan başvuruya açık mı?"""
+    """Is this remote posting open to applicants from the given places?"""
     restriction = remote_restriction(job)
     if restriction is None:
         return True
@@ -70,10 +72,10 @@ def remote_scope_allows(job: JobPosting, places: list[str]) -> bool:
 
 
 def remote_geo_penalty(job: JobPosting, candidate_places: list[str]) -> float:
-    """Adayın coğrafyasına kapalı uzaktan ilanları sıralamada aşağı çeker.
+    """Pushes remote postings closed to the candidate's geography down the list.
 
-    Kullanıcı lokasyon belirtmediyse sert filtre devreye girmiyor; bu ceza
-    o durumda da ulaşılamayacak ilanların üst sıraları doldurmasını engelliyor.
+    If the user set no location the hard filter never runs; this penalty keeps
+    unreachable postings out of the top slots in that case too.
     """
     if job.work_mode != "remote":
         return 0.0
@@ -89,10 +91,11 @@ def title_seniority(title: str) -> str | None:
 
 
 def dedupe(jobs: list[JobPosting]) -> list[JobPosting]:
-    """Aynı ilanın farklı kaynaklardaki kopyalarını teke indirir.
+    """Collapses copies of the same posting coming from different sources.
 
-    Aynı (şirket, unvan) çiftinde işverenin kendi ATS panosundan gelen kaydı
-    tercih ediyoruz: link kalıcı, açıklama tam ve başvuru formu otomatikleştirilebilir.
+    For the same (company, title) pair we prefer the record from the employer's
+    own ATS board: the link is stable, the description complete and the
+    application form automatable.
     """
     best: dict[tuple[str, str], JobPosting] = {}
     for job in jobs:
@@ -118,16 +121,17 @@ def _location_ok(job: JobPosting, criteria: SearchCriteria) -> bool:
         return True
 
     if job.work_mode == "remote":
-        # Uzaktan ilan kullanıcının ülkesini otomatik karşılamaz: "Berlin remote"
-        # ya da "Remote - USA" pratikte o coğrafyayla sınırlı. Yalnızca kısıtsız
-        # olanlar veya kullanıcının coğrafyasını kapsayanlar geçer.
+        # A remote posting does not automatically satisfy the user's country:
+        # "Berlin remote" or "Remote - USA" are limited to that geography in
+        # practice. Only unrestricted ones, or ones covering the user's
+        # geography, pass.
         return remote_scope_allows(job, places)
 
     haystack = normalize(f"{job.location} {job.title}")
     if not haystack.strip():
-        # Lokasyon bilgisi yok: elemek yerine LLM'e bırak
+        # No location information: leave it to the LLM instead of filtering
         return True
-    # term_in şart: düz alt-dize araması "us" ülkesini "Houston" içinde bulur
+    # term_in is required: a plain substring search finds the country "us" inside "Houston"
     return any(term_in(haystack, p) for p in places)
 
 
@@ -165,12 +169,12 @@ def prefilter_score(
     criteria: SearchCriteria,
     candidate_places: list[str] | None = None,
 ) -> float:
-    """0-100 arası kaba uyum skoru."""
+    """Rough 0-100 fit score."""
     score = 0.0
     title_norm = normalize(job.title)
     body_norm = normalize(f"{job.title} {' '.join(job.tags)} {job.description[:4000]}")
 
-    # Unvan eşleşmesi en güçlü sinyal
+    # Title match is the strongest signal
     for title in plan.titles:
         t = normalize(title)
         if not t:
@@ -178,7 +182,7 @@ def prefilter_score(
         if term_in(title_norm, t):
             score += 22
             break
-        # Unvan kelimelerinin çoğu geçiyorsa kısmi puan
+        # Partial credit if most of the title words appear
         words = [w for w in t.split() if len(w) > 2]
         if words and sum(term_in(title_norm, w) for w in words) / len(words) >= 0.6:
             score += 12
@@ -198,7 +202,7 @@ def prefilter_score(
         if term_in(body_norm, query):
             score += 4
 
-    # Seviye uyumu
+    # Seniority fit
     wanted_levels = set(criteria.seniority)
     level = title_seniority(job.title)
     if wanted_levels and level:
@@ -210,7 +214,7 @@ def prefilter_score(
             ))
             score -= min(18, distance * 7)
 
-    # Tazelik
+    # Freshness
     if job.posted_at:
         age_days = (datetime.now(timezone.utc) - job.posted_at).days
         if age_days <= 7:
@@ -218,28 +222,28 @@ def prefilter_score(
         elif age_days <= 21:
             score += 4
 
-    # İşverenin kendi panosu: başvuru otomasyonu için değerli
+    # The employer's own board: valuable for application automation
     if job.ats:
         score += 5
-    # Açıklaması olmayan ilan LLM için de değersiz
+    # A posting with no description is worthless to the LLM too
     if len(job.description) < 200:
         score -= 10
 
-    # Adayın başvuramayacağı coğrafi kısıtlı uzaktan ilanları aşağı çek
+    # Push down geo-restricted remote postings the candidate cannot apply to
     score += remote_geo_penalty(job, candidate_places or [])
 
     return max(0.0, min(100.0, score))
 
 
-#: Bu eşiğin altındaki ilan LLM'e gönderilmeye değmez (hiçbir sinyali tutmuyor)
+#: Below this threshold a posting is not worth sending to the LLM (no signal hit)
 MIN_RELEVANCE = 18.0
-#: Ama sonuç ekranını tamamen boş bırakmamak için en az bu kadarını yine de geçir
+#: But let at least this many through so the results screen is never empty
 MIN_CANDIDATES = 10
-#: Tek bir kaynak LLM bütçesinin en fazla bu kadarını alabilir.
-#: Gerekçe: ATS panoları çok daha uzun ve zengin ilan metni döndürüyor, bu da
-#: onlara ön elemede yapısal avantaj veriyor. Sınır olmadan takip edilen birkaç
-#: şirket tüm sonuçları dolduruyor ve diğer kaynaklardaki uygun ilanlar hiç
-#: değerlendirilmiyor. Çeşitliliği garanti etmek sonucun kalitesini artırıyor.
+#: A single source may take at most this share of the LLM budget.
+#: Why: ATS boards return much longer, richer posting text, which gives them a
+#: structural advantage in pre-filtering. Without a cap, a handful of tracked
+#: companies fill every slot and suitable postings from other sources are never
+#: evaluated. Guaranteeing diversity improves result quality.
 MAX_SOURCE_SHARE = 0.5
 
 
@@ -263,10 +267,10 @@ def rank(
 def _apply_source_cap(
     scored: list[tuple[JobPosting, float]], limit: int
 ) -> list[tuple[JobPosting, float]]:
-    """Skor sırasını koruyarak tek kaynağın baskınlığını kırar.
+    """Breaks a single source's dominance while preserving score order.
 
-    Önce kotayı aşmayanları alır; kota yüzünden liste dolmazsa kalanları
-    yine skor sırasıyla ekler — sonuç sayısından ödün vermiyoruz.
+    Takes everything within quota first; if the quota leaves the list short, it
+    appends the rest in score order — we never give up result count.
     """
     if limit <= 0:
         return []

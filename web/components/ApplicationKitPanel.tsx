@@ -4,7 +4,7 @@ import { useState } from "react";
 import { cvDownloadUrl } from "@/lib/api";
 import type { ApplicationKitResponse } from "@/lib/types";
 
-/** Panoya kopyalama — geri bildirimli. */
+/** Copy to clipboard, with feedback. */
 function CopyButton({ text, label }: { text: string; label: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -20,7 +20,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       }}
       className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 transition hover:bg-gray-50"
     >
-      {copied ? "Kopyalandı ✓" : label}
+      {copied ? "Copied ✓" : label}
     </button>
   );
 }
@@ -38,7 +38,7 @@ function Block({
     <div className="rounded-lg border border-gray-200 bg-white p-4">
       <div className="mb-2 flex items-center justify-between gap-2">
         <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">{title}</h4>
-        {copyText && <CopyButton text={copyText} label="Kopyala" />}
+        {copyText && <CopyButton text={copyText} label="Copy" />}
       </div>
       {children}
     </div>
@@ -52,9 +52,9 @@ export default function ApplicationKitPanel({ data }: { data: ApplicationKitResp
     <div className="mt-4 space-y-3 rounded-xl border border-violet-200 bg-violet-50/40 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">Başvuru kiti hazır</h3>
+          <h3 className="text-sm font-semibold text-gray-900">Application kit ready</h3>
           <p className="text-xs text-gray-600">
-            {job.company} · {job.title} · dil: {kit.language === "tr" ? "Türkçe" : "İngilizce"}
+            {job.company} · {job.title} · language: {kit.language === "tr" ? "Turkish" : "English"}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -62,7 +62,7 @@ export default function ApplicationKitPanel({ data }: { data: ApplicationKitResp
             href={cvDownloadUrl(application_id, "pdf")}
             className="rounded-lg bg-gray-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-gray-800"
           >
-            CV indir (PDF)
+            Download CV (PDF)
           </a>
           <a
             href={cvDownloadUrl(application_id, "docx")}
@@ -76,23 +76,23 @@ export default function ApplicationKitPanel({ data }: { data: ApplicationKitResp
             rel="noopener noreferrer"
             className="rounded-lg bg-violet-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-violet-700"
           >
-            İlana git ve başvur
+            Open posting and apply
           </a>
         </div>
       </div>
 
-      <Block title="Ön yazı" copyText={kit.cover_letter}>
+      <Block title="Cover letter" copyText={kit.cover_letter}>
         <p className="whitespace-pre-line text-sm leading-relaxed text-gray-800">
           {kit.cover_letter}
         </p>
       </Block>
 
-      <Block title="Neden ben?" copyText={kit.why_me}>
+      <Block title="Why me?" copyText={kit.why_me}>
         <p className="whitespace-pre-line text-sm leading-relaxed text-gray-800">{kit.why_me}</p>
       </Block>
 
       {kit.talking_points.length > 0 && (
-        <Block title="Vurgulanacak maddeler" copyText={kit.talking_points.join("\n")}>
+        <Block title="Talking points" copyText={kit.talking_points.join("\n")}>
           <ul className="list-disc space-y-1 pl-5 text-sm text-gray-800">
             {kit.talking_points.map((point, i) => (
               <li key={i}>{point}</li>
@@ -101,10 +101,10 @@ export default function ApplicationKitPanel({ data }: { data: ApplicationKitResp
         </Block>
       )}
 
-      {/* Şeffaflık: kullanıcı neyi imzaladığını bilmeli */}
+      {/* Transparency: the user must know what they are signing */}
       <div className="grid gap-3 sm:grid-cols-2">
         {kit.emphasized.length > 0 && (
-          <Block title="Bu ilan için öne çıkarıldı">
+          <Block title="Foregrounded for this posting">
             <ul className="space-y-1 text-sm text-gray-700">
               {kit.emphasized.map((item, i) => (
                 <li key={i} className="flex gap-2">
@@ -116,7 +116,7 @@ export default function ApplicationKitPanel({ data }: { data: ApplicationKitResp
           </Block>
         )}
         {kit.downplayed.length > 0 && (
-          <Block title="Geri plana atıldı">
+          <Block title="Pushed to the background">
             <ul className="space-y-1 text-sm text-gray-700">
               {kit.downplayed.map((item, i) => (
                 <li key={i} className="flex gap-2">
@@ -132,10 +132,10 @@ export default function ApplicationKitPanel({ data }: { data: ApplicationKitResp
       {kit.gaps_to_expect.length > 0 && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
           <h4 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-amber-900">
-            Mülakatta sorulabilir — CV'ye eklenmedi
+            May come up in the interview — not added to the CV
           </h4>
           <p className="mb-2 text-xs text-amber-800">
-            İlanın istediği ama profilinde bulunmayan şeyler. Bilerek uydurulmadı; hazırlıklı git.
+            Things the posting asks for that are not in your profile. Deliberately not fabricated — go in prepared.
           </p>
           <ul className="list-disc space-y-1 pl-5 text-sm text-amber-900">
             {kit.gaps_to_expect.map((gap, i) => (
@@ -147,7 +147,7 @@ export default function ApplicationKitPanel({ data }: { data: ApplicationKitResp
 
       <details className="rounded-lg border border-gray-200 bg-white p-4">
         <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-gray-500">
-          Uyarlanmış CV içeriğini gör
+          View the tailored CV content
         </summary>
         <div className="mt-3 space-y-3 text-sm text-gray-800">
           <div>

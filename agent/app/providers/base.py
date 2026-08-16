@@ -1,12 +1,13 @@
-"""Sağlayıcı modüllerinin ortak sözleşmesi ve yardımcıları.
+"""Shared contract and helpers for provider modules.
 
-Her sağlayıcı modülü iki şey sunar:
+Every provider module exposes two things:
 
-    status(settings) -> Status          çağrı yapmadan hazır mı?
-    async complete(...) -> str          modelin ürettiği JSON metni
+    status(settings) -> Status          usable without making a call?
+    async complete(...) -> str          the JSON text the model produced
 
-Doğrulamayı sağlayıcılar yapmaz: dönen metni tek yerde (app/llm.py) Pydantic
-ile doğruluyoruz. Böylece "şema tutmadı" hatası her sağlayıcıda aynı görünüyor.
+Providers do not validate: the returned text is validated in one place
+(app/llm.py) with Pydantic, so a "schema mismatch" error looks the same on
+every provider.
 """
 
 from __future__ import annotations
@@ -20,28 +21,28 @@ from pydantic import BaseModel
 
 
 class LLMError(RuntimeError):
-    """Model çağrısı tamamlanamadı."""
+    """A model call could not be completed."""
 
 
 @dataclass(frozen=True)
 class Status:
-    """Sağlayıcının çağrı yapmadan anlaşılabilen hazırlık durumu."""
+    """Provider readiness that can be determined without making a call."""
 
     ready: bool
     detail: str
 
 
-# JSON Schema'da bazı sağlayıcıların (özellikle OpenAI strict kipi) kabul
-# etmediği ya da yok saydığı anahtarlar.
+# JSON Schema keywords some providers (notably OpenAI strict mode) reject or
+# ignore.
 _DROPPED_KEYWORDS = {"default", "title", "examples", "$comment"}
 
 
 def strict_json_schema(schema: type[BaseModel]) -> dict[str, Any]:
-    """Pydantic şemasını 'strict' structured-output kurallarına uydurur.
+    """Adapts a Pydantic schema to "strict" structured-output rules.
 
-    Kurallar sağlayıcılar arasında ortak: her nesne `additionalProperties:
-    false` olmalı ve tüm alanları `required` listesinde bulunmalı. Pydantic
-    ikisini de kendiliğinden üretmiyor.
+    The rules are common across providers: every object needs
+    `additionalProperties: false` and must list all of its fields in `required`.
+    Pydantic emits neither by itself.
     """
     return _strictify(schema.model_json_schema())
 
@@ -63,11 +64,11 @@ _FENCE = re.compile(r"^\s*```(?:json)?\s*|\s*```\s*$", re.IGNORECASE)
 
 
 def extract_json(text: str) -> str:
-    """Model yanıtından JSON gövdesini ayıklar.
+    """Pulls the JSON body out of a model response.
 
-    Şema zorlaması olmayan sağlayıcılarda (yerel modeller, json_schema
-    desteklemeyen uçlar) yanıt ```json çitiyle ya da kısa bir cümleyle sarılı
-    gelebiliyor. Doğrudan geçerliyse dokunmuyoruz.
+    With providers that cannot enforce a schema (local models, endpoints without
+    json_schema support) the answer may arrive wrapped in a ```json fence or a
+    short sentence. Text that is already valid JSON is returned untouched.
     """
     candidate = text.strip()
     if _looks_like_json(candidate):
@@ -77,7 +78,7 @@ def extract_json(text: str) -> str:
     if _looks_like_json(stripped):
         return stripped
 
-    # Son çare: metindeki en dıştaki { … } bloğu
+    # Last resort: the outermost { … } block in the text
     start, end = stripped.find("{"), stripped.rfind("}")
     if start != -1 and end > start:
         block = stripped[start : end + 1]

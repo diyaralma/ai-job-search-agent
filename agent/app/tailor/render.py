@@ -1,9 +1,9 @@
-"""Uyarlanmış CV'yi PDF ve DOCX'e basar.
+"""Renders the tailored CV to PDF and DOCX.
 
-Font notu: fpdf2'nin gömülü fontları Latin-1 ile sınırlı, yani "ğ ş İ ı"
-karakterlerini basamıyor — Türkçe bir CV'de bu kabul edilemez. Bu yüzden
-sistemdeki DejaVuSans TTF'ini gömüyoruz. Font bulunamazsa PDF üretimini
-sessizce bozuk harflerle sürdürmek yerine açık hata veriyoruz.
+Font note: fpdf2's built-in fonts are limited to Latin-1, so they cannot print
+characters like "ğ ş İ ı" — unacceptable for a Turkish CV. That is why the
+system DejaVuSans TTF is embedded instead. If the font is missing we raise a
+clear error rather than silently emitting a document full of broken glyphs.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from fpdf import FPDF
 
 from ..schemas import TailoredCV
 
-#: Türkçe karakterleri kapsayan, çoğu dağıtımda hazır gelen font
+#: Covers Turkish characters and ships with most distributions
 _FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
@@ -35,8 +35,8 @@ MUTED = (107, 114, 128)
 RULE = (209, 213, 219)
 
 
-#: Bölüm başlıkları. Kit ilanın dilinde üretiliyor; İngilizce bir CV'de
-#: "ÖZET / DENEYİM" yazması belgeyi bozuk gösterir.
+#: Section headings. The kit is generated in the posting's language; an English
+#: CV with "ÖZET / DENEYİM" headings looks broken.
 _HEADINGS = {
     "tr": {
         "summary": "Özet", "skills": "Yetkinlikler", "experience": "Deneyim",
@@ -50,23 +50,23 @@ _HEADINGS = {
 
 
 def tr_upper(text: str) -> str:
-    """Türkçe kurallarına göre büyük harfe çevirir.
+    """Uppercases following Turkish rules.
 
-    Python'un str.upper() metodu "i" -> "I" yapıyor; Türkçe'de doğrusu
-    "i" -> "İ". Bölüm başlıklarında bu "YETKINLIKLER" / "EĞITIM" gibi
-    hatalara yol açıyor ve işverene giden belgede göze batıyor.
+    Python's str.upper() maps "i" -> "I"; in Turkish the correct mapping is
+    "i" -> "İ". In section headings that produces "YETKINLIKLER" / "EĞITIM",
+    which is glaring in a document sent to an employer.
     """
     return text.replace("i", "İ").replace("ı", "I").upper()
 
 
 def upper_for(language: str, text: str) -> str:
-    """Dile uygun büyük harf. İngilizce metne Türkçe kuralı uygulamak
-    "Skills" -> "SKİLLS" gibi bozuk çıktı üretir."""
+    """Language-aware uppercase. Applying the Turkish rule to English text
+    produces broken output like "Skills" -> "SKİLLS"."""
     return tr_upper(text) if language == "tr" else text.upper()
 
 
 def labels(language: str) -> dict[str, str]:
-    return _HEADINGS.get(language, _HEADINGS["tr"])
+    return _HEADINGS.get(language, _HEADINGS["en"])
 
 
 class FontMissing(RuntimeError):
@@ -79,13 +79,13 @@ def _find_font(candidates: tuple[str, ...]) -> Path:
         if p.exists():
             return p
     raise FontMissing(
-        "Türkçe karakterleri basabilen DejaVuSans fontu bulunamadı. "
-        "Kurulum: sudo apt install fonts-dejavu-core"
+        "DejaVuSans font not found (needed to print non-Latin-1 characters). "
+        "Install it: sudo apt install fonts-dejavu-core"
     )
 
 
 class _CVPdf(FPDF):
-    def __init__(self, name: str, language: str = "tr") -> None:
+    def __init__(self, name: str, language: str = "en") -> None:
         super().__init__(format="A4", unit="mm")
         self._candidate = name
         self._language = language
@@ -101,7 +101,7 @@ class _CVPdf(FPDF):
         page_word = labels(self._language)["page"]
         self.cell(0, 5, f"{self._candidate} · {page_word} {self.page_no()}", align="C")
 
-    # -- yardımcılar ------------------------------------------------------
+    # -- helpers ----------------------------------------------------------
     def heading(self, text: str) -> None:
         self.ln(3)
         self.set_font("DejaVu", "B", 10.5)
@@ -127,7 +127,7 @@ class _CVPdf(FPDF):
         self.multi_cell(0, 4.8, text, new_x="LMARGIN", new_y="NEXT")
 
 
-def to_pdf(cv: TailoredCV, language: str = "tr") -> bytes:
+def to_pdf(cv: TailoredCV, language: str = "en") -> bytes:
     lab = labels(language)
     pdf = _CVPdf(cv.full_name, language)
     pdf.add_page()
@@ -179,8 +179,8 @@ def to_pdf(cv: TailoredCV, language: str = "tr") -> bytes:
     return bytes(pdf.output())
 
 
-def to_docx(cv: TailoredCV, language: str = "tr") -> bytes:
-    """DOCX çıktısı — bazı başvuru sistemleri PDF kabul etmiyor."""
+def to_docx(cv: TailoredCV, language: str = "en") -> bytes:
+    """DOCX output — some application systems do not accept PDF."""
     lab = labels(language)
     doc = Document()
     style = doc.styles["Normal"]
@@ -250,8 +250,8 @@ def to_docx(cv: TailoredCV, language: str = "tr") -> bytes:
     return buf.getvalue()
 
 
-#: Content-Disposition başlığı latin-1 ile kodlanıyor; "ş" gibi harfler orada
-#: yok ve indirme 500 ile patlıyor. Bu yüzden dosya adını ASCII'ye çeviriyoruz.
+#: The Content-Disposition header is latin-1 encoded; characters like "ş" do not
+#: exist there and the download blows up with a 500. Hence the ASCII fold.
 _ASCII_MAP = str.maketrans(
     {
         "ı": "i", "İ": "I", "ş": "s", "Ş": "S", "ğ": "g", "Ğ": "G",
@@ -262,7 +262,7 @@ _ASCII_MAP = str.maketrans(
 
 
 def safe_filename(candidate: str, company: str, extension: str) -> str:
-    """İndirilen dosyaya okunabilir, ASCII ve güvenli bir ad ver."""
+    """Give the downloaded file a readable, ASCII-safe name."""
     parts = [p for p in (candidate, company) if p]
     raw = "_".join(parts) or "CV"
     ascii_only = raw.translate(_ASCII_MAP).encode("ascii", "ignore").decode("ascii")

@@ -1,7 +1,7 @@
-"""Metin normalizasyonu ve terim eşleştirme.
+"""Text normalization and term matching.
 
-Hem kaynak katmanındaki kaba filtreler hem ön eleme skorlaması buradaki
-eşleştirmeyi kullanıyor ki iki yerde farklı davranış oluşmasın.
+Both the coarse filters in the source layer and the pre-filter scoring use the
+matching here, so the two cannot drift apart.
 """
 
 from __future__ import annotations
@@ -11,10 +11,11 @@ import unicodedata
 
 _NON_WORD = re.compile(r"[^a-z0-9]+")
 
-#: Unicode ayrıştırmasıyla (NFKD) ASCII'ye inmeyen harfler.
-#: Türkçe noktasız "ı" bunların başında geliyor: ayrıştırılamadığı için
-#: harf-dışı sayılıp boşluğa çevriliyordu ve "çalışmak" -> "cal smak" oluyordu.
-#: Bu, Kırıkkale/Şişli/Bakırköy gibi her yer adını ve Türkçe her terimi bozar.
+#: Letters that NFKD decomposition does not reduce to ASCII.
+#: The Turkish dotless "ı" is the worst offender: it does not decompose, so it
+#: was treated as a non-letter and replaced by a space, turning "çalışmak" into
+#: "cal smak". That breaks every place name like Kırıkkale/Şişli/Bakırköy and
+#: every Turkish term.
 _CHAR_MAP = str.maketrans({
     "ı": "i", "İ": "i", "ø": "o", "Ø": "o", "æ": "ae", "Æ": "ae",
     "ß": "ss", "đ": "d", "Đ": "d", "ł": "l", "Ł": "l", "þ": "th", "ð": "d",
@@ -22,7 +23,7 @@ _CHAR_MAP = str.maketrans({
 
 
 def normalize(text: str) -> str:
-    """Aksanları düşür, küçült, harf/rakam dışını boşluğa çevir."""
+    """Strip accents, lowercase, turn everything non-alphanumeric into spaces."""
     text = text.translate(_CHAR_MAP).casefold()
     text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if not unicodedata.combining(c))
@@ -30,14 +31,14 @@ def normalize(text: str) -> str:
 
 
 def term_in(haystack_norm: str, term: str) -> bool:
-    """Kelime sınırına saygılı eşleşme.
+    """Word-boundary aware matching.
 
-    Düz `in` kullanmak "AWS" terimini "laws" içinde, "R" terimini neredeyse her
-    metinde bulur ve eşleştirmeyi çöpe çevirir. normalize() harf/rakam dışını
-    boşluğa çevirdiği için terimi boşlukla sarıp arıyoruz; çok kelimeli terimler
-    ("machine learning") de aynı şekilde çalışıyor.
+    A plain `in` finds "AWS" inside "laws" and "R" in almost any text, which
+    makes matching worthless. Since normalize() turns everything
+    non-alphanumeric into spaces, we wrap the term in spaces and search for
+    that; multi-word terms ("machine learning") work the same way.
 
-    `haystack_norm` normalize edilmiş olmalı; `term` ham verilebilir.
+    `haystack_norm` must already be normalized; `term` may be raw.
     """
     term_norm = normalize(term)
     if not term_norm:
@@ -46,7 +47,7 @@ def term_in(haystack_norm: str, term: str) -> bool:
 
 
 def matches_any(text: str, terms: list[str]) -> bool:
-    """Terim listesi boşsa her şey geçer; değilse en az biri eşleşmeli."""
+    """An empty term list matches everything; otherwise at least one must hit."""
     if not terms:
         return True
     haystack = normalize(text)

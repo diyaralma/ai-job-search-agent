@@ -1,23 +1,24 @@
-"""OpenAI ve OpenAI-uyumlu her uç için sağlayıcı.
+"""Provider for OpenAI and every OpenAI-compatible endpoint.
 
-Tek bir `POST {base_url}/chat/completions` çağrısı olduğu için resmî SDK yerine
-projede zaten kullanılan httpx tercih edildi: OpenRouter, Groq, Together,
-DeepSeek, Ollama, LM Studio, vLLM gibi uçların hepsi bu sözleşmeyi konuşuyor
-ama parametre desteğinde ayrışıyorlar. Gövdeyi kendimiz kurunca desteklenmeyen
-bir alanı görüp geri adım atabiliyoruz.
+Since this is a single `POST {base_url}/chat/completions`, it uses httpx — which
+the project already depends on — rather than the official SDK: OpenRouter, Groq,
+Together, DeepSeek, Ollama, LM Studio and vLLM all speak this contract but differ
+in which parameters they accept. Building the body ourselves lets us notice an
+unsupported field and step back.
 
-Ayrıştığı iki nokta ve ele alınışı:
+The two points where they diverge, and how each is handled:
 
-1. **Şema zorlaması.** OpenAI `response_format.json_schema` destekliyor, çoğu
-   yerel sunucu desteklemiyor. LLM_JSON_MODE=auto en güçlüsünden başlar,
-   400 alınca `json_object`a, o da yoksa şemayı sisteme yazıp serbest metne
-   düşer. Çalışan kip hatırlanır — her çağrıda baştan denenmez.
-2. **Token alanı.** Yeni OpenAI modelleri `max_tokens` yerine
-   `max_completion_tokens` istiyor, uyumlu sunucuların çoğu tersi. İlk 400'de
-   diğerine geçilir.
+1. **Schema enforcement.** OpenAI supports `response_format.json_schema`, most
+   local servers do not. With LLM_JSON_MODE=auto we start at the strongest mode,
+   fall back to `json_object` on a 400, and finally to putting the schema in the
+   system prompt as free text. The working mode is remembered — it is not
+   re-negotiated on every call.
+2. **Token field.** Newer OpenAI models want `max_completion_tokens` instead of
+   `max_tokens`, while most compatible servers want the opposite. The first 400
+   switches to the other one.
 
-Hangi kip kullanılırsa kullanılsın dönen metin app/llm.py'de Pydantic ile
-doğrulanıyor; şema garantisi sunucunun insafına bırakılmıyor.
+Whichever mode is used, the returned text is validated with Pydantic in
+app/llm.py; the schema guarantee is never left to the server's goodwill.
 """
 
 from __future__ import annotations
@@ -37,17 +38,17 @@ from .base import LLMError, Status, strict_json_schema
 NAME = "openai"
 logger = logging.getLogger(__name__)
 
-#: Güçlüden zayıfa şema zorlama kipleri.
+#: Schema-enforcement modes, strongest first.
 _MODE_CHAIN = ("schema", "object", "prompt")
 
-#: Süreç boyunca öğrenilen sunucu yetenekleri. Aynı sunucuya yapılan sonraki
-#: çağrılar desteklenmediği anlaşılan kipi tekrar denemez.
+#: Server capabilities learned during this process. Later calls to the same
+#: server do not retry a mode that turned out to be unsupported.
 _learned: dict[str, Any] = {"mode": None, "token_param": "max_tokens"}
 
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "host.docker.internal"}
 
-# Şema zorlaması olmayan kiplerde sisteme eklenen talimat. İngilizce: küçük
-# yerel modeller biçim talimatlarını İngilizce daha güvenilir izliyor.
+# Instruction appended to the system prompt in the modes without schema
+# enforcement.
 _JSON_INSTRUCTION = (
     "Respond with a single JSON object that validates against this JSON Schema. "
     "Output raw JSON only — no prose, no markdown, no code fences.\n\nJSON Schema:\n{schema}"
@@ -59,16 +60,17 @@ def status(settings: Settings) -> Status:
         return Status(
             ready=False,
             detail=(
-                "openai sağlayıcısı için LLM_MODEL zorunlu — sunucuya göre değişiyor "
-                "(ör. gpt-4o-mini, deepseek-chat, llama3.1:8b). agent/.env içine ekle."
+                "The openai provider requires LLM_MODEL — the valid name depends on "
+                "the server (e.g. gpt-4o-mini, deepseek-chat, llama3.1:8b). Add it "
+                "to agent/.env."
             ),
         )
     if _needs_key(settings) and not settings.api_key:
         return Status(
             ready=False,
             detail=(
-                f"{_host(settings)} için API anahtarı yok. agent/.env içine "
-                "OPENAI_API_KEY=... ekle (yerel sunucularda gerekmez)."
+                f"No API key for {_host(settings)}. Add OPENAI_API_KEY=... to "
+                "agent/.env (local servers do not need one)."
             ),
         )
     return Status(ready=True, detail=f"{settings.api_base_url} · {settings.active_model}")
@@ -92,18 +94,18 @@ async def complete(
         try:
             text = await _post(settings, payload, timeout)
         except _Unsupported as exc:
-            # Sunucu bu kipi tanımıyor: bir alt kipe düş ve öğrendiğimizi sakla.
+            # The server does not know this mode: step down and remember it.
             last_detail = str(exc)
-            logger.info("json kipi '%s' desteklenmiyor, düşülüyor: %s", mode, exc)
+            logger.info("json mode '%s' unsupported, stepping down: %s", mode, exc)
             continue
         if _learned["mode"] != mode:
             _learned["mode"] = mode
-            logger.info("OpenAI-uyumlu uç için json kipi: %s", mode)
+            logger.info("json mode for this OpenAI-compatible endpoint: %s", mode)
         return text
 
     raise LLMError(
-        "Sunucu hiçbir JSON kipini kabul etmedi. agent/.env içinde "
-        f"LLM_JSON_MODE değerini elle ayarlamayı dene. Son hata: {last_detail[:300]}"
+        "The server accepted none of the JSON modes. Try setting LLM_JSON_MODE "
+        f"manually in agent/.env. Last error: {last_detail[:300]}"
     )
 
 
@@ -112,7 +114,7 @@ def _modes(settings: Settings) -> tuple[str, ...]:
         return (settings.llm_json_mode,)
     learned = _learned["mode"]
     if learned:
-        # Öğrenilen kipten başla, gerekirse yine aşağı düşebil.
+        # Start from the learned mode, but still allow stepping further down.
         index = _MODE_CHAIN.index(learned)
         return _MODE_CHAIN[index:]
     return _MODE_CHAIN
@@ -154,7 +156,7 @@ def _payload(
 
 
 class _Unsupported(Exception):
-    """Sunucu gövdedeki bir alanı tanımadı — daha zayıf bir kiple denenebilir."""
+    """The server rejected a field in the body — a weaker mode may work."""
 
 
 async def _post(settings: Settings, payload: dict[str, Any], timeout: float) -> str:
@@ -169,9 +171,11 @@ async def _post(settings: Settings, payload: dict[str, Any], timeout: float) -> 
         try:
             response = await _http().post(url, json=body, headers=headers, timeout=timeout)
         except httpx.TimeoutException as exc:
-            raise LLMError(f"Model çağrısı {timeout:.0f} saniyede tamamlanmadı.") from exc
+            raise LLMError(
+                f"The model call did not finish within {timeout:.0f} seconds."
+            ) from exc
         except httpx.HTTPError as exc:
-            raise LLMError(f"{settings.api_base_url} adresine bağlanılamadı: {exc}") from exc
+            raise LLMError(f"Could not reach {settings.api_base_url}: {exc}") from exc
 
         if response.status_code == 200:
             return _read_content(response)
@@ -183,61 +187,61 @@ async def _post(settings: Settings, payload: dict[str, Any], timeout: float) -> 
                 if _learned["token_param"] == "max_tokens"
                 else "max_tokens"
             )
-            logger.info("token alanı '%s' olarak değiştirildi", _learned["token_param"])
+            logger.info("switched token field to '%s'", _learned["token_param"])
             continue
         _raise_http(settings, response.status_code, detail)
 
-    raise LLMError("Beklenmeyen durum: istek tekrarları tükendi.")
+    raise LLMError("Unexpected state: retries exhausted.")
 
 
 def _read_content(response: httpx.Response) -> str:
     try:
         data = response.json()
     except ValueError as exc:
-        raise LLMError(f"Sunucu JSON döndürmedi: {response.text[:300]!r}") from exc
+        raise LLMError(f"The server did not return JSON: {response.text[:300]!r}") from exc
 
-    if isinstance(data.get("error"), dict):  # bazı uçlar hatayı 200 ile döndürüyor
-        raise LLMError(f"Sunucu hata döndürdü: {str(data['error'])[:300]}")
+    if isinstance(data.get("error"), dict):  # some endpoints return errors with a 200
+        raise LLMError(f"The server returned an error: {str(data['error'])[:300]}")
 
     choices = data.get("choices") or []
     if not choices:
-        raise LLMError(f"Yanıtta 'choices' yok: {str(data)[:300]}")
+        raise LLMError(f"No 'choices' in the response: {str(data)[:300]}")
 
     choice = choices[0]
     content = (choice.get("message") or {}).get("content")
-    if isinstance(content, list):  # çok parçalı içerik döndüren uçlar
+    if isinstance(content, list):  # endpoints that return multi-part content
         content = "".join(
             part.get("text", "") for part in content if isinstance(part, dict)
         )
 
     if choice.get("finish_reason") == "length":
         raise LLMError(
-            "Yanıt LLM_MAX_TOKENS sınırında kesildi. agent/.env içindeki değeri "
-            "artır ya da SCORE_BATCH_SIZE'ı küçült."
+            "The response was cut off at LLM_MAX_TOKENS. Raise that value in "
+            "agent/.env or lower SCORE_BATCH_SIZE."
         )
     if not content or not content.strip():
-        raise LLMError("Model boş yanıt döndürdü.")
+        raise LLMError("The model returned an empty response.")
     return content
 
 
 def _raise_http(settings: Settings, code: int, detail: str) -> None:
     if code in (401, 403):
         raise LLMError(
-            f"{_host(settings)} kimlik doğrulamayı reddetti ({code}). "
-            "agent/.env içindeki OPENAI_API_KEY / LLM_API_KEY değerini kontrol et."
+            f"{_host(settings)} rejected the credentials ({code}). Check "
+            "OPENAI_API_KEY / LLM_API_KEY in agent/.env."
         )
     if code == 404:
         raise LLMError(
-            f"Uç ya da model bulunamadı ({code}). LLM_BASE_URL sonuna /v1 eklemeyi "
-            f"ve LLM_MODEL={settings.active_model} değerinin doğruluğunu kontrol et."
+            f"Endpoint or model not found ({code}). Check that LLM_BASE_URL ends "
+            f"with /v1 and that LLM_MODEL={settings.active_model} is correct."
         )
     if code == 429:
         raise LLMError(
-            f"{_host(settings)} hız/kota sınırına takıldı (429). MAX_CONCURRENCY'yi düşür."
+            f"{_host(settings)} hit a rate/quota limit (429). Lower MAX_CONCURRENCY."
         )
     if code == 400 and _is_capability_error(detail):
         raise _Unsupported(detail)
-    raise LLMError(f"Sunucu hatası ({code}): {detail[:300]}")
+    raise LLMError(f"Server error ({code}): {detail[:300]}")
 
 
 def _is_token_param_error(detail: str) -> bool:
@@ -265,5 +269,5 @@ def _host(settings: Settings) -> str:
 
 @lru_cache(maxsize=1)
 def _http() -> httpx.AsyncClient:
-    """Süreç başına tek bağlantı havuzu."""
+    """One connection pool per process."""
     return httpx.AsyncClient()

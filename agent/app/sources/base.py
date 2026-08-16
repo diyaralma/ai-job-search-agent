@@ -1,8 +1,8 @@
-"""İlan kaynakları için ortak arayüz ve normalizasyon yardımcıları.
+"""Shared interface and normalization helpers for job sources.
 
-Her kaynak kendi API'sinden çektiğini `JobPosting`'e çevirir. Kaynağa özgü
-tek şey `fetch()`; kimlik üretimi, HTML temizliği, çalışma şekli tespiti gibi
-işler burada ortak.
+Each source converts what it fetched from its own API into a `JobPosting`. The
+only source-specific part is `fetch()`; id generation, HTML cleanup and work-mode
+detection are shared here.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ def detect_work_mode(*texts: str | None) -> WorkMode:
 
 
 def parse_date(value) -> datetime | None:
-    """Kaynakların gönderdiği çeşitli tarih biçimlerini tolere eder."""
+    """Tolerates the various date formats the sources send."""
     if value in (None, "", 0):
         return None
     if isinstance(value, (int, float)):
@@ -88,10 +88,10 @@ def parse_date(value) -> datetime | None:
 
 
 class JobSource(ABC):
-    """Tek bir ilan kaynağı."""
+    """A single job source."""
 
     name: str = "base"
-    #: Şirketlerin kendi ATS panosu mu? (otomatik başvuru bu panolarda mümkün)
+    #: Is this an employer's own ATS board? (auto-apply is only possible there)
     ats: str = ""
 
     @property
@@ -106,6 +106,6 @@ class JobSource(ABC):
         criteria: SearchCriteria,
         limit: int,
     ) -> list[JobPosting]:
-        """Kaynaktan ilanları çeker. Hata durumunda exception fırlatabilir;
-        pipeline hatayı yakalayıp diğer kaynaklarla devam eder."""
+        """Fetches postings from the source. May raise; the pipeline catches the
+        error and continues with the other sources."""
         raise NotImplementedError
