@@ -1,5 +1,5 @@
 {
-  "_comment": "Takip edilen şirketlerin ATS pano kimlikleri. Buraya kendi hedef şirketlerini ekle — bu ilanlar doğrudan işverenden gelir ve başvuru formu otomatikleştirilebilir. Pano kimliğini ilan URL'sinden çıkarabilirsin: boards.greenhouse.io/<token>, jobs.lever.co/<company>, jobs.ashbyhq.com/<board>, <account>.workable.com. Çalışmayan bir kimlik sessizce atlanır.",
+  "_comment": "ATS board IDs of the companies to track. Add your own target companies here: these postings come straight from the employer and their application forms can be automated. Read the board ID off a posting URL: boards.greenhouse.io/<token>, jobs.lever.co/<company>, jobs.ashbyhq.com/<board>, <account>.workable.com. An ID that does not work is skipped silently.",
   "greenhouse": [
     "stripe",
     "gitlab",

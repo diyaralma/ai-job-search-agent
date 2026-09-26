@@ -1,5 +1,11 @@
 # AI Job Search Agent
 
+[![CI](https://github.com/diyaralma/ai-job-search-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/diyaralma/ai-job-search-agent/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-yellow)
+
 Upload your CV, set your criteria, and the agent scans open job boards and
 employers' own ATS boards, then ranks every posting by how well it fits you —
 with a per-posting tailored CV and cover letter on demand.

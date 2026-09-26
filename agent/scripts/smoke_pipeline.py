@@ -117,7 +117,7 @@ async def main() -> int:
     )
     plan, stats, matches = await run_search(PROFILE, criteria)
 
-    print(f"kaynaklar         : {', '.join(stats.sources_used) or '-'}")
+    print(f"sources           : {', '.join(stats.sources_used) or '-'}")
     if stats.source_errors:
         for name, err in stats.source_errors.items():
             print(f"  ! {name}: {err}")
