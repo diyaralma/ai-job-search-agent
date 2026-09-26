@@ -14,8 +14,8 @@ OpenAI-compatible endpoint including fully local models via Ollama / LM Studio.
 Requirements: Python 3.12+, Node.js 20+, and one model provider (see below).
 
 ```bash
-git clone https://github.com/diyaralma/Job-search-automation.git
-cd Job-search-automation/agent
+git clone https://github.com/diyaralma/ai-job-search-agent.git
+cd ai-job-search-agent/agent
 
 python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 cp .env.example .env                       # pick your provider here
